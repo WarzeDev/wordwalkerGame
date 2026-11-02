@@ -30,7 +30,7 @@ $("mute").onclick = () => {
   muted = !muted;
   $("mute").classList.toggle("muted", muted);
   muted ? snd.music.pause() : (running && startMusic());
-  kb.focus();
+  running && focusKb();
 };
 
 // ---------- word list (fetched once, then kept in localStorage) ----------
@@ -103,11 +103,15 @@ function newSegment(prev) {
   render();
 }
 
+// Centers the cursor tile in the *visible* area, so the on-screen keyboard
+// (which shrinks the visual viewport) never covers it.
 function render() {
   world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
   const i = Math.min(seg.buf.length, seg.L - 1), c = seg.cells[i];
   c.el.classList.add("cursor");
-  world.style.transform = `translate(${innerWidth / 2 - (c.x * STEP + T / 2)}px,${innerHeight / 2 - (c.y * STEP + T / 2) + 24}px)`;
+  const vv = window.visualViewport || { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0 };
+  const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30;
+  world.style.transform = `translate(${cx - (c.x * STEP + T / 2)}px,${cy - (c.y * STEP + T / 2)}px)`;
 }
 
 // ---------- input ----------
@@ -149,14 +153,47 @@ function submit() {
   newSegment(seg);
 }
 
+// ---------- keyboard (desktop + mobile) ----------
+// A hidden <input> is focused so phones open their on-screen keyboard.
+// Its value always mirrors the current word; on every `input` event we diff
+// it against the word and replay the difference as typed letters/backspaces.
+// (Mobile keyboards often report key = "Unidentified", so keydown alone isn't enough.)
+kb.setAttribute("inputmode", "text");
+kb.setAttribute("enterkeyhint", "done");
+kb.setAttribute("autocapitalize", "none");
+
+function focusKb() { kb.focus({ preventScroll: true }); }
+function syncKb() { kb.value = seg ? seg.buf.join("") : ""; }
+
+kb.addEventListener("input", () => {
+  if (!running) { kb.value = ""; return; }
+  const cur = kb.value.toLowerCase().replace(/[^a-z]/g, "");
+  const buf = seg.buf.join("");
+  let p = 0;
+  while (p < cur.length && p < buf.length && cur[p] === buf[p]) p++;
+  for (let n = buf.length - p; n > 0; n--) back();
+  for (const ch of cur.slice(p)) type(ch);
+  syncKb();
+});
+
+// Desktop path: preventDefault stops the character from also reaching the input.
 addEventListener("keydown", (e) => {
   if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden")) start(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "Backspace") { e.preventDefault(); back(); }
-  else if (/^[a-zA-Z]$/.test(e.key)) type(e.key.toLowerCase());
+  if (e.key === "Backspace") { e.preventDefault(); back(); syncKb(); }
+  else if (/^[a-zA-Z]$/.test(e.key)) { e.preventDefault(); type(e.key.toLowerCase()); syncKb(); }
 });
-addEventListener("pointerdown", () => running && kb.focus());
+
+// Tap anywhere to (re)open the keyboard. Must happen inside a user gesture (click) for iOS.
+addEventListener("mousedown", (e) => { if (running) e.preventDefault(); }); // keep focus on the input
+addEventListener("click", () => running && focusKb());
+
 addEventListener("resize", () => seg && render());
+addEventListener("orientationchange", () => seg && setTimeout(render, 150));
+if (window.visualViewport) {
+  visualViewport.addEventListener("resize", () => seg && render());
+  visualViewport.addEventListener("scroll", () => { scrollTo(0, 0); seg && render(); });
+}
 
 // ---------- loop ----------
 function tick(now) {
@@ -175,12 +212,14 @@ function start() {
   scoreEl.textContent = 0; wordsEl.textContent = "0 words";
   overlay.classList.add("hidden");
   newSegment(null);
-  startMusic(); kb.focus();
+  kb.value = "";
+  startMusic(); focusKb();
   last = performance.now(); requestAnimationFrame(tick);
 }
 
 function end() {
   running = false; snd.music.pause(); snd.music.currentTime = 0;
+  kb.blur(); kb.value = ""; // closes the mobile keyboard
   clockText.textContent = "0.0"; barEl.style.width = "0%";
   if (score > best) { best = score; try { localStorage.setItem("wordwalker-best", best); } catch (e) {} }
   overlay.querySelector("h1").textContent = "Time's up!";
@@ -192,7 +231,7 @@ function end() {
 
 $("best").textContent = best ? "Best: " + best : "";
 
-// ---------- bottom of game.js (replaces `$("start").onclick = start;`) ----------
+// ---------- boot ----------
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); // ask the browser not to evict it
 
 const startBtn = $("start");

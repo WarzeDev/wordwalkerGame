@@ -12,6 +12,7 @@ const AUDIO = {
   backspace: "audio/backspace.mp3",
   correct: "audio/correct.mp3",
   invalid: "audio/invalid.mp3",
+  hint: "audio/hint.mp3",
   music: "audio/music.mp3",
 };
 
@@ -20,6 +21,7 @@ const $ = (id) => document.getElementById(id);
 const world = $("world"), overlay = $("overlay"), toastEl = $("toast"), kb = $("kb");
 const scoreEl = $("score"), wordsEl = $("words"), clockEl = $("clock");
 const barEl = $("clockbar"), clockText = $("clocktext");
+const hintBtn = $("hint"), hintNum = $("hintnum");
 
 // ---------- audio ----------
 const snd = {};
@@ -53,6 +55,7 @@ async function loadWords() {
 
 // ---------- state ----------
 let tiles, used, seg, score, count, time, running = false, last = 0, best = 0;
+let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = first letter typed
 try { best = +localStorage.getItem("wordwalker-best") || 0; } catch (e) {}
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
@@ -66,7 +69,7 @@ function makeCell(x, y, mult) {
   const el = document.createElement("div");
   el.className = "tile" + (mult === 2 ? " x2" : mult === 3 ? " x3" : "");
   el.style.left = x * STEP + "px"; el.style.top = y * STEP + "px";
-  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">${mult}x</span>` : "") + '<span class="p"></span>';
+  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">x${mult}</span>` : "") + '<span class="p"></span><span class="g"></span>';
   world.appendChild(el);
   const c = { x, y, el, mult };
   tiles.set(x + "," + y, c);
@@ -100,35 +103,43 @@ function newSegment(prev) {
     if (i === a) {
       const c = tiles.get(x + "," + y);
       c.el.className = "tile pending"; const m = c.el.querySelector(".m"); if (m) m.remove();
-      c.el.querySelector(".p").textContent = "";
+      c.el.querySelector(".p").textContent = ""; c.el.querySelector(".g").textContent = "";
       c.mult = 1; c.prov = prev.cells[prev.L - 1].letter; c.el.firstChild.textContent = c.prov;
       cells.push(c);
     } else cells.push(makeCell(x, y, randMult()));
   }
-  seg = { dir, L, a, cells, buf: [] };
+  clearHint();
+  seg = { dir, L, a, cells, buf: [], t0: performance.now(), hinted: false };
   render();
 }
 
-// Frames the whole current word: centers on the middle of the word and zooms out
-// just enough that all of it fits in the *visible* area (the on-screen keyboard
-// shrinks the visual viewport). Never zooms in past 1x.
 world.style.transformOrigin = "0 0";
-const MIN_ZOOM = 0.3;
-function render() {
-  world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
-  const i = Math.min(seg.buf.length, seg.L - 1);
-  seg.cells[i].el.classList.add("cursor");
+const visible = () => window.visualViewport || { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0 };
 
-  const a = seg.cells[0], b = seg.cells[seg.L - 1];
-  const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
-  const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+// Centers a box of tiles (grid coords) in the *visible* area (the on-screen keyboard
+// shrinks the visual viewport), zooming out until it fits. Never zooms in past 1x.
+function fit(minX, maxX, minY, maxY, minZoom) {
   const w = (maxX - minX) * STEP + T, h = (maxY - minY) * STEP + T;
-  const mx = minX * STEP + w / 2, my = minY * STEP + h / 2; // word center, world px
-
-  const vv = window.visualViewport || { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0 };
-  const s = Math.max(MIN_ZOOM, Math.min(1, (vv.width - 32) / w, (vv.height - 100) / h));
+  const mx = minX * STEP + w / 2, my = minY * STEP + h / 2;
+  const vv = visible();
+  const s = Math.max(minZoom, Math.min(1, (vv.width - 32) / w, (vv.height - 100) / h));
   const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30;
   world.style.transform = `translate(${cx - mx * s}px,${cy - my * s}px) scale(${s})`;
+}
+
+// Frames the whole current word.
+function render() {
+  world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
+  seg.cells[Math.min(seg.buf.length, seg.L - 1)].el.classList.add("cursor");
+  const a = seg.cells[0], b = seg.cells[seg.L - 1];
+  fit(Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.y, b.y), Math.max(a.y, b.y), 0.3);
+}
+
+// Frames the entire map (used when the game ends).
+function showAll() {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const c of tiles.values()) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y); }
+  fit(x0, x1, y0, y1, 0.04);
 }
 
 // ---------- input ----------
@@ -136,7 +147,8 @@ function type(ch) {
   if (!running || seg.buf.length >= seg.L) return;
   const i = seg.buf.length, c = seg.cells[i];
   if (i === seg.a && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
-  seg.buf.push(ch); c.letter = ch; c.el.firstChild.textContent = ch;
+  if (!started) { started = true; last = performance.now(); seg.t0 = last; } // clock starts on the first letter
+  seg.buf.push(ch); c.letter = ch; c.el.firstChild.textContent = ch; c.el.classList.add("typed");
   c.el.classList.remove("pending"); flash(c.el, "pop");
   if (i !== seg.a) c.el.querySelector(".p").textContent = LV[ch]; // inherited letter scores nothing
   play("type", 0.5);
@@ -148,7 +160,7 @@ function back() {
   if (!running || !seg.buf.length) return;
   seg.cells.forEach((c) => c.el.classList.remove("bad"));
   const i = seg.buf.length - 1, c = seg.cells[i];
-  seg.buf.pop();
+  seg.buf.pop(); c.el.classList.remove("typed");
   if (i === seg.a) { c.el.classList.add("pending"); c.letter = c.prov; c.el.firstChild.textContent = c.prov; }
   else { c.letter = ""; c.el.firstChild.textContent = ""; c.el.querySelector(".p").textContent = ""; }
   play("backspace", 0.5); render();
@@ -162,13 +174,19 @@ function submit() {
   if (used.has(word)) return reject("Already used!");
   if (!WORDS.has(word)) return reject("Not a word");
   let pts = 0;
-  seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult; c.el.classList.add("done"); c.el.classList.remove("pop"); });
-  used.add(word); count++; score += pts * 10;
+  seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult * 10; c.el.classList.add("done"); c.el.classList.remove("pop"); });
+  used.add(word); count++; score += pts;
   time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5);
-  flash(clockEl, "bump"); toast("+" + pts * 10);
+  log.push({ word, pts, ms: performance.now() - seg.t0 });
+  let msg = "+" + pts;
+  if (count % 10 === 0) { hints++; msg += " - +1 hint"; }
+  updateHint();
+  flash(clockEl, "bump"); toast(msg);
   scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
   play("correct");
+  const finished = seg;
   newSegment(seg);
+  finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
 }
 
 // ---------- keyboard (desktop + mobile) ----------
@@ -206,17 +224,59 @@ addEventListener("keydown", (e) => {
 addEventListener("mousedown", (e) => { if (running) e.preventDefault(); }); // keep focus on the input
 addEventListener("click", () => running && focusKb());
 
-addEventListener("resize", () => seg && render());
-addEventListener("orientationchange", () => seg && setTimeout(render, 150));
+function onViewport() { layoutHint(); if (running) render(); }
+addEventListener("resize", onViewport);
+addEventListener("orientationchange", () => setTimeout(onViewport, 150));
 if (window.visualViewport) {
-  visualViewport.addEventListener("resize", () => seg && render());
-  visualViewport.addEventListener("scroll", () => { scrollTo(0, 0); seg && render(); });
+  visualViewport.addEventListener("resize", onViewport);
+  visualViewport.addEventListener("scroll", () => { scrollTo(0, 0); onViewport(); });
+}
+
+// ---------- hints ----------
+// Reveals a random valid word (fitting the tiles and anything already typed) as faint
+// ghost letters, one by one over 5 seconds. You still have to type it.
+function updateHint() { hintNum.textContent = hints; hintBtn.disabled = hints < 1; }
+function clearHint() { hintTimers.forEach(clearTimeout); hintTimers = []; }
+// Keeps the button above the on-screen keyboard.
+function layoutHint() { const vv = visible(); hintBtn.style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px"; }
+
+function useHint() {
+  if (!running || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
+  const { L, a, cells } = seg, pre = seg.buf.join(""), prov = a >= 0 ? cells[a].prov : null;
+  const todo = [];
+  for (let i = seg.buf.length; i < L; i++) if (i !== a) todo.push(i);
+  if (!todo.length) return;
+  const pool = [];
+  for (const w of WORDS) if (w.length === L && !used.has(w) && w.startsWith(pre) && (a < 0 || w[a] === prov)) pool.push(w);
+  if (!pool.length) return toast("No hint available");
+  const word = pool[rnd(0, pool.length - 1)];
+  hints--; seg.hinted = true; updateHint();
+  todo.forEach((idx, k) => hintTimers.push(setTimeout(() => {
+    cells[idx].el.querySelector(".g").textContent = word[idx];
+  }, (1000 * k) / todo.length)));
+  play("hint");
+}
+hintBtn.onclick = () => { useHint(); focusKb(); };
+
+// ---------- end-of-game stats ----------
+function statsHtml(isBest) {
+  const n = log.length, sec = (ms) => (ms / 1000).toFixed(1) + "s";
+  const row = (k, v) => `<div>${k}</div><b>${v}</b>`;
+  const top = n && log.reduce((a, b) => (b.pts > a.pts ? b : a));
+  const fast = n && log.reduce((a, b) => (b.ms < a.ms ? b : a));
+  return row("Score", score) + row("Best", best + (isBest ? " (New!)" : ""))
+    + row("Words used", n)
+    + row("Highest scoring word", n ? `${top.word.toUpperCase()} (${top.pts})` : "—")
+    + row("Average score", n ? (score / n).toFixed(1) : "—")
+    + row("Fastest word", n ? `${fast.word.toUpperCase()} (${sec(fast.ms)})` : "—")
+    + row("Average word time", n ? sec(log.reduce((t, w) => t + w.ms, 0) / n) : "—");
 }
 
 // ---------- loop ----------
 function tick(now) {
   if (!running) return;
-  time -= (now - last) / 1000; last = now;
+  if (started) time -= (now - last) / 1000;
+  last = now;
   if (time <= 0) return end();
   barEl.style.width = (time / MAX_TIME) * 100 + "%";
   clockText.textContent = time.toFixed(1);
@@ -226,7 +286,10 @@ function tick(now) {
 
 function start() {
   world.innerHTML = ""; tiles = new Map(); used = new Set();
-  score = 0; count = 0; time = START_TIME; running = true;
+  score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = [];
+  endTimers.forEach(clearTimeout); endTimers = [];
+  world.style.transitionDuration = ""; world.style.transitionTimingFunction = "";
+  overlay.classList.remove("end"); hintBtn.hidden = false; updateHint(); layoutHint();
   scoreEl.textContent = 0; wordsEl.textContent = "0 words";
   overlay.classList.add("hidden");
   newSegment(null);
@@ -236,15 +299,25 @@ function start() {
 }
 
 function end() {
-  running = false; snd.music.pause(); snd.music.currentTime = 0;
+  running = false;
+  clearHint(); hintBtn.hidden = true;
   kb.blur(); kb.value = ""; // closes the mobile keyboard
-  clockText.textContent = "0.0"; barEl.style.width = "0%";
-  if (score > best) { best = score; try { localStorage.setItem("wordwalker-best", best); } catch (e) {} }
+  clockText.textContent = "0.0"; barEl.style.width = "0%"; clockEl.classList.remove("low");
+  const isBest = score > best;
+  if (isBest) { best = score; try { localStorage.setItem("wordwalker-best", best); } catch (e) {} }
   overlay.querySelector("h1").textContent = "Time's up!";
-  overlay.querySelector("p").innerHTML = `Score <b>${score}</b> · ${count} words`;
-  $("best").textContent = "Best: " + best;
+  $("best").textContent = "";
+  $("stats").innerHTML = statsHtml(isBest);
   $("start").textContent = "Play again";
-  overlay.classList.remove("hidden");
+  // Slowly pan out to show the whole map, then bring up the results.
+  endTimers = [
+    setTimeout(() => {
+      world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
+      world.style.transitionDuration = "3s"; world.style.transitionTimingFunction = "ease-in-out";
+      showAll();
+    }, 350),
+    setTimeout(() => { overlay.classList.add("end"); overlay.classList.remove("hidden"); }, 3500),
+  ];
 }
 
 $("best").textContent = best ? "Best: " + best : "";
@@ -259,3 +332,5 @@ startBtn.onclick = start;
 loadWords()
   .then(() => { startBtn.disabled = false; startBtn.textContent = "Play"; })
   .catch(() => { startBtn.textContent = "Couldn't load words.txt"; });
+
+layoutHint(); updateHint();

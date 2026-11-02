@@ -119,6 +119,7 @@ body {
   font-size: 30px;
   font-weight: 800;
   text-transform: uppercase;
+  overflow: hidden;
   transition: background 0.15s, border-color 0.15s;
 }
 
@@ -177,6 +178,35 @@ body {
 
 .tile.pop {
   animation: pop 0.2s;
+}
+
+/* ghost letter from the hint system */
+.tile .g {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.tile.typed .g {
+  visibility: hidden;
+}
+
+/* shine sweep across a completed word */
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.tile.shine::after {
+  animation: shine 0.6s ease-out var(--d, 0ms);
 }
 
 /* ---------- toast ---------- */
@@ -238,6 +268,53 @@ body {
   display: none;
 }
 
+/* ---------- hint button (bottom right) ---------- */
+
+#hint {
+  position: fixed;
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: 16px;
+  z-index: 6;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0e1bca6;
+  border: 0;
+  border-radius: 50%;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+#hint[hidden] {
+  display: none;
+}
+
+#hint:disabled {
+  background: #3b4258;
+  opacity: 0.6;
+  cursor: default;
+}
+
+#hintnum {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5484d;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 /* ---------- hidden input (opens the mobile keyboard) ---------- */
 
 #kb {
@@ -272,6 +349,33 @@ body {
 
 #overlay.hidden {
   display: none;
+}
+
+/* game over: let the zoomed-out map show through */
+#overlay.end {
+  background: #14161c99;
+}
+
+#stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 24px;
+  padding: 14px 20px;
+  background: #14161ce6;
+  border-radius: 12px;
+  text-align: left;
+}
+
+#stats:empty {
+  display: none;
+}
+
+#stats div {
+  opacity: 0.7;
+}
+
+#stats b {
+  text-align: right;
 }
 
 #overlay h1 {
@@ -318,6 +422,12 @@ body {
 @keyframes pop {
   50% {
     transform: scale(1.12);
+  }
+}
+
+@keyframes shine {
+  to {
+    transform: translateX(120%);
   }
 }
 

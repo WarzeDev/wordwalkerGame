@@ -28,7 +28,7 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies.
 4. The inherited letter is shown dimmed until you type it. You still have to type it, and it has to match.
 5. If a word is not valid, or you already used it, the tiles flash red. Press **Backspace** and try another.
 6. The clock starts when you type your first letter. Keep going until it runs out.
-7. Stuck? Tap the 💡 button (bottom right) to reveal a random valid word as faint ghost letters over 5 seconds. You still have to type it. You start with **2 hints** and earn **1 more every 10 words**.
+7. Stuck? Tap the 💡 button (bottom right) or press **1** to reveal a random valid word as faint ghost letters over 5 seconds. You still have to type it. You start with **2 hints** and earn **1 more every 10 words**.
 
 When time is up the camera pans out to show your whole path, followed by your stats: highest scoring word, average score, words used, fastest word and average word time.
 

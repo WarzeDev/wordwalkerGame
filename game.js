@@ -223,7 +223,8 @@ kb.addEventListener("input", () => {
 addEventListener("keydown", (e) => {
   if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden")) start(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "Backspace") { e.preventDefault(); back(); syncKb(); }
+  if (e.key === "1") { e.preventDefault(); if (!e.repeat) useHint(); }
+  else if (e.key === "Backspace") { e.preventDefault(); back(); syncKb(); }
   else if (/^[a-zA-Z]$/.test(e.key)) { e.preventDefault(); type(e.key.toLowerCase()); syncKb(); }
 });
 

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+    <!-- Primary / SEO -->
+    <title>WordWalker – A Word Path Game</title>
+    <meta name="description" content="WordWalker is a fast word game: type English words along a winding path, right then down, never repeat a word, and race the clock. Free, in your browser.">
+    <meta name="keywords" content="wordwalker, word game, typing game, browser game, word puzzle, free online game, vocabulary game">
+    <meta name="author" content="WarzeDev">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <link rel="canonical" href="https://wordwalker.warze.org/">
+    <meta name="theme-color" content="#4caf7d">
+    <meta name="color-scheme" content="dark">
+    <meta name="application-name" content="WordWalker">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="logo.svg">
+    <link rel="icon" type="image/png" href="logo.png">
+    <link rel="apple-touch-icon" href="logo.png">
+
+    <!-- Open Graph (Discord, Facebook, LinkedIn, Telegram, WhatsApp, Slack) -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="WordWalker">
+    <meta property="og:title" content="Wordwalker">
+    <meta property="og:description" content="Type words along a winding path, never repeat one, and beat the clock.">
+    <meta property="og:url" content="https://wordwalker.warze.org/">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://wordwalker.warze.org/thumbnail.png">
+    <meta property="og:image:secure_url" content="https://wordwalker.warze.org/thumbnail.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Wordwalker gameplay: a path of letter tiles winding right and down">
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@warzedev">
+    <meta name="twitter:creator" content="@warzedev">
+    <meta name="twitter:title" content="WordWalker">
+    <meta name="twitter:description" content="Type words along a winding path, never repeat one, and beat the clock.">
+    <meta name="twitter:url" content="https://wordwalker.warze.org/">
+    <meta name="twitter:image" content="https://wordwalker.warze.org/thumbnail.png">
+    <meta name="twitter:image:alt" content="Wordwalker gameplay: a path of letter tiles winding right and down">
+
+    <!-- Mobile / PWA-ish -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Wordwalker">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      "name": "Wordwalker",
+      "url": "https://wordwalker.warze.org/",
+      "description": "Type English words along a winding path, never repeat a word, and race the clock.",
+      "image": "https://wordwalker.warze.org/thumbnail.png",
+      "genre": ["Word game", "Typing game", "Puzzle"],
+      "gamePlatform": "Web browser",
+      "applicationCategory": "Game",
+      "operatingSystem": "Any",
+      "inLanguage": "en",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "WarzeDev", "sameAs": ["https://x.com/warzedev", "https://github.com/WarzeDev"] }
+    }
+    </script>
+
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+  <div id="hud">
+    <div id="score">0</div>
+    <div id="clock"><div id="clockbar"></div><span id="clocktext">30.0</span></div>
+    <div id="words">0 words</div>
+  </div>
+  <div id="viewport"><div id="world"></div></div>
+  <div id="toast"></div>
+  <button id="mute" title="Mute (M)">🔊</button>
+  <input id="kb" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false">
+  <div id="overlay">
+    <h1>Wordwalker</h1>
+    <p id="best"></p>
+    <button id="start">Play</button>
+  </div>
+  <script src="game.js"></script>
+  </body>
+</html>

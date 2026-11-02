@@ -31,8 +31,9 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies.
 
 ### Scoring
 
-- Every letter you type is worth **10 points**. The inherited letter is worth nothing.
-- 🟥 **Red** tiles are worth **x2** and 🟪 **purple** tiles are worth **x3**. The multiplier is shown in the bottom right of the tile.
+- Every letter is worth its **Scrabble value** (E = 1, D = 2, B = 3, K = 5, Q = 10, and so on). The value is shown in the bottom right of the tile once you type the letter. The inherited letter is worth nothing.
+- 🟥 **Red** tiles are worth **x2** and 🟪 **purple** tiles are worth **x3**. The multiplier is shown in the bottom left of the tile and applies to that tile's letter, so a Q on a purple tile is worth 30.
+- A word's score is the sum of its letters' values after multipliers.
 - Each correct word adds **3 seconds + 1.5 seconds per letter** to the clock, up to a maximum of 60 seconds. You start with 30.
 - Your best score is saved in your browser.
 

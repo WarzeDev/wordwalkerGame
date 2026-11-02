@@ -132,13 +132,25 @@ body {
   border-color: #a45cf0;
 }
 
+/* multiplier: bottom left */
 .tile .m {
+  position: absolute;
+  left: 4px;
+  bottom: 1px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.85;
+  text-transform: lowercase;
+}
+
+/* letter score: bottom right */
+.tile .p {
   position: absolute;
   right: 4px;
   bottom: 1px;
   font-size: 11px;
   font-weight: 700;
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
 .tile.pending .l {

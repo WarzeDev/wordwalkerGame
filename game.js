@@ -2,6 +2,11 @@
 // ---------- config ----------
 const T = 56, G = 6, STEP = T + G;
 const START_TIME = 30, MAX_TIME = 60;
+// Scrabble letter values
+const LV = {
+  a: 1, b: 3, c: 3, d: 2, e: 1, f: 4, g: 2, h: 4, i: 1, j: 8, k: 5, l: 1, m: 3,
+  n: 1, o: 1, p: 3, q: 10, r: 1, s: 1, t: 1, u: 1, v: 4, w: 4, x: 8, y: 4, z: 10,
+};
 const AUDIO = {
   type: "audio/type.mp3",
   backspace: "audio/backspace.mp3",
@@ -61,7 +66,7 @@ function makeCell(x, y, mult) {
   const el = document.createElement("div");
   el.className = "tile" + (mult === 2 ? " x2" : mult === 3 ? " x3" : "");
   el.style.left = x * STEP + "px"; el.style.top = y * STEP + "px";
-  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">x${mult}</span>` : "");
+  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">${mult}x</span>` : "") + '<span class="p"></span>';
   world.appendChild(el);
   const c = { x, y, el, mult };
   tiles.set(x + "," + y, c);
@@ -95,6 +100,7 @@ function newSegment(prev) {
     if (i === a) {
       const c = tiles.get(x + "," + y);
       c.el.className = "tile pending"; const m = c.el.querySelector(".m"); if (m) m.remove();
+      c.el.querySelector(".p").textContent = "";
       c.mult = 1; c.prov = prev.cells[prev.L - 1].letter; c.el.firstChild.textContent = c.prov;
       cells.push(c);
     } else cells.push(makeCell(x, y, randMult()));
@@ -121,6 +127,7 @@ function type(ch) {
   if (i === seg.a && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
   seg.buf.push(ch); c.letter = ch; c.el.firstChild.textContent = ch;
   c.el.classList.remove("pending"); flash(c.el, "pop");
+  if (i !== seg.a) c.el.querySelector(".p").textContent = LV[ch]; // inherited letter scores nothing
   play("type", 0.5);
   if (seg.buf.length === seg.L) submit();
   render();
@@ -132,7 +139,7 @@ function back() {
   const i = seg.buf.length - 1, c = seg.cells[i];
   seg.buf.pop();
   if (i === seg.a) { c.el.classList.add("pending"); c.letter = c.prov; c.el.firstChild.textContent = c.prov; }
-  else { c.letter = ""; c.el.firstChild.textContent = ""; }
+  else { c.letter = ""; c.el.firstChild.textContent = ""; c.el.querySelector(".p").textContent = ""; }
   play("backspace", 0.5); render();
 }
 
@@ -144,10 +151,10 @@ function submit() {
   if (used.has(word)) return reject("Already used!");
   if (!WORDS.has(word)) return reject("Not a word");
   let pts = 0;
-  seg.cells.forEach((c, i) => { if (i !== seg.a) pts += 10 * c.mult; c.el.classList.add("done"); c.el.classList.remove("pop"); });
-  used.add(word); count++; score += pts;
+  seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult; c.el.classList.add("done"); c.el.classList.remove("pop"); });
+  used.add(word); count++; score += pts * 10;
   time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5);
-  flash(clockEl, "bump"); toast("+" + pts);
+  flash(clockEl, "bump"); toast("+" + pts * 10);
   scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
   play("correct");
   newSegment(seg);

@@ -61,13 +61,23 @@ async function loadWords() {
 
 // ---------- state ----------
 let tiles, used, seg, score, count, time, running = false, last = 0, best = 0;
-let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = first letter typed
+let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = clock running (after the 3rd word)
 try { best = +localStorage.getItem("wordwalker-best") || 0; } catch (e) {}
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 function toast(msg) {
   toastEl.textContent = msg; toastEl.classList.add("show");
   clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), 1100);
+}
+
+// ---------- tutorial (first two words) ----------
+const tutEl = $("tutorial");
+function updateTutorial() {
+  if (count >= 2) { tutEl.classList.remove("show"); return; }
+  tutEl.innerHTML = count === 0
+    ? `Type a <b>${seg.L}</b> letter word`
+    : `Now, type a <b>${seg.L}</b> letter word that starts with <b>${seg.cells[seg.a].prov.toUpperCase()}</b>`;
+  tutEl.classList.add("show");
 }
 
 // ---------- segments ----------
@@ -116,6 +126,7 @@ function newSegment(prev) {
   }
   clearHint();
   seg = { dir, L, a, cells, buf: [], t0: performance.now(), hinted: false };
+  updateTutorial();
   render();
 }
 
@@ -153,7 +164,7 @@ function type(ch) {
   if (!running || seg.buf.length >= seg.L) return;
   const i = seg.buf.length, c = seg.cells[i];
   if (i === seg.a && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
-  if (!started) { started = true; last = performance.now(); seg.t0 = last; } // clock starts on the first letter
+  if (count === 0 && !seg.touched) { seg.touched = true; seg.t0 = performance.now(); } // first word is timed from its first letter
   seg.buf.push(ch); c.letter = ch; c.el.firstChild.textContent = ch; c.el.classList.add("typed");
   c.el.classList.remove("pending"); flash(c.el, "pop");
   if (i !== seg.a) c.el.querySelector(".p").textContent = LV[ch]; // inherited letter scores nothing
@@ -182,11 +193,12 @@ function submit() {
   let pts = 0;
   seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult * 10; c.el.classList.add("done"); c.el.classList.remove("pop"); });
   used.add(word); count++; score += pts;
-  time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5);
+  if (started) time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5); // the 3 intro words are free
   log.push({ word, pts, ms: performance.now() - seg.t0 });
   let msg = "+" + pts;
   if (count % 10 === 0) { hints++; msg += " - +1 hint"; }
   updateHint();
+  if (count === 3) { started = true; last = performance.now(); document.body.classList.remove("intro"); } // reveal HUD, start clock
   flash(clockEl, "bump"); toast(msg);
   scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
   play("correct");
@@ -249,7 +261,7 @@ function clearHint() { hintTimers.forEach(clearTimeout); hintTimers = []; }
 function layoutHint() { const vv = visible(); hintBtn.style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px"; }
 
 function useHint() {
-  if (!running || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
+  if (!running || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
   const { L, a, cells } = seg, pre = seg.buf.join(""), prov = a >= 0 ? cells[a].prov : null;
   const todo = [];
   for (let i = seg.buf.length; i < L; i++) if (i !== a) todo.push(i);
@@ -426,6 +438,7 @@ function start() {
   score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = [];
   endTimers.forEach(clearTimeout); endTimers = []; fxClear();
   world.style.transitionDuration = ""; world.style.transitionTimingFunction = "";
+  document.body.classList.add("intro"); tutEl.classList.remove("show");
   overlay.classList.remove("end"); hintBtn.hidden = false; updateHint(); layoutHint();
   scoreEl.textContent = 0; wordsEl.textContent = "0 words";
   overlay.classList.add("hidden");
@@ -437,7 +450,7 @@ function start() {
 
 function end() {
   running = false;
-  clearHint(); hintBtn.hidden = true;
+  clearHint(); hintBtn.hidden = true; tutEl.classList.remove("show");
   kb.blur(); kb.value = ""; // closes the mobile keyboard
   clockText.textContent = "0.0"; barEl.style.width = "0%"; clockEl.classList.remove("low");
   const isBest = score > best;

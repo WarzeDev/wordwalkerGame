@@ -230,6 +230,49 @@ body {
   opacity: 1;
 }
 
+/* ---------- tutorial (first two words) ---------- */
+
+#tutorial {
+  position: fixed;
+  left: 50%;
+  top: calc(64px + env(safe-area-inset-top));
+  z-index: 5;
+  max-width: 88vw;
+  padding: 10px 18px;
+  background: #000a;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.4s;
+  pointer-events: none;
+  animation: float 3s ease-in-out infinite;
+}
+
+#tutorial.show {
+  opacity: 1;
+}
+
+#tutorial b {
+  color: #ffd166;
+}
+
+/* ---------- intro: HUD + hint hidden until 3 words are typed ---------- */
+
+body.intro #hud,
+body.intro #hint {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* no transition while entering intro (instant hide), fade only when it ends */
+body:not(.intro) #hud,
+body:not(.intro) #hint {
+  transition: opacity 1s;
+}
+
 /* ---------- mute button ---------- */
 
 #mute {
@@ -474,6 +517,12 @@ body {
   100% {
     opacity: 0;
     transform: translateX(-50%) translateY(-24px) scale(1.04);
+  }
+}
+
+@keyframes float {
+  50% {
+    transform: translateX(-50%) translateY(-6px);
   }
 }
 

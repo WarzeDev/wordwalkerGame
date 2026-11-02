@@ -43,3 +43,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#14161c;color:#eee;fon
         opacity: 0.5;
     }
 }
+#mute{display:flex;align-items:center;justify-content:center;padding:0}
+#mute svg{width:18px;height:18px}
+#mute .bi-volume-mute-fill{display:none}
+#mute.muted .bi-volume-mute-fill{display:block}
+#mute.muted .bi-volume-up-fill{display:none}

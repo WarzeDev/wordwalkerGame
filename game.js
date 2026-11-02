@@ -28,7 +28,7 @@ function play(name, vol = 0.7) {
 function startMusic() { if (!muted) snd.music.play().catch(() => {}); }
 $("mute").onclick = () => {
   muted = !muted;
-  $("mute").textContent = muted ? "🔇" : "🔊";
+  $("mute").classList.toggle("muted", muted);
   muted ? snd.music.pause() : (running && startMusic());
   kb.focus();
 };

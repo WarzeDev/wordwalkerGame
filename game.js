@@ -13,6 +13,12 @@ const AUDIO = {
   correct: "audio/correct.mp3",
   invalid: "audio/invalid.mp3",
   hint: "audio/hint.mp3",
+  score1: "audio/score1.mp3",
+  score2: "audio/score2.mp3",
+  score3: "audio/score3.mp3",
+  score4: "audio/score4.mp3",
+  score5: "audio/score5.mp3",
+  score6: "audio/score6.mp3",
   music: "audio/music.mp3",
 };
 
@@ -187,6 +193,7 @@ function submit() {
   const finished = seg;
   newSegment(seg);
   finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
+  celebrate(pts, finished.cells);
 }
 
 // ---------- keyboard (desktop + mobile) ----------
@@ -224,7 +231,7 @@ addEventListener("keydown", (e) => {
 addEventListener("mousedown", (e) => { if (running) e.preventDefault(); }); // keep focus on the input
 addEventListener("click", () => running && focusKb());
 
-function onViewport() { layoutHint(); if (running) render(); }
+function onViewport() { layoutHint(); sizeFx(); if (running) render(); }
 addEventListener("resize", onViewport);
 addEventListener("orientationchange", () => setTimeout(onViewport, 150));
 if (window.visualViewport) {
@@ -272,6 +279,135 @@ function statsHtml(isBest) {
     + row("Average word time", n ? sec(log.reduce((t, w) => t + w.ms, 0) / n) : "—");
 }
 
+// ---------- score celebrations ----------
+// Word + sound + pulsing screen edges + particles, scaled to the word's score.
+const TIERS = [
+  { min: 0,   word: "Good.",            color: "#ffffff", sound: "score1" },
+  { min: 60,  word: "Nice!",            color: "#4cd97b", sound: "score2" },
+  { min: 100, word: "Great!",           color: "#ffd93d", sound: "score3", fx: "electric", dur: 500 },
+  { min: 160, word: "Amazing!!",        color: "#b36bff", sound: "score4", fx: "shapes" },
+  { min: 210, word: "Fantastic!!!",     color: "#ff6ec7", sound: "score5", fx: "bubbles", dur: 700 },
+  { min: 300, word: "INCONCEIVABLE!!!", color: "#ff3b30", sound: "score6", fx: "flames",  dur: 1000 },
+];
+const mk = (tag, id) => { const e = document.createElement(tag); e.id = id; document.body.appendChild(e); return e; };
+const ratingEl = mk("div", "rating"), edgeEl = mk("div", "edge"), fx = mk("canvas", "fx");
+const ctx = fx.getContext("2d");
+let parts = [], emit = [], fxRaf = 0, fxLast = 0;
+const rr = (a, b) => a + Math.random() * (b - a);
+const pickOf = (a) => a[Math.floor(Math.random() * a.length)];
+
+function sizeFx() {
+  const d = devicePixelRatio || 1;
+  fx.width = Math.round(innerWidth * d); fx.height = Math.round(innerHeight * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+}
+function fxClear() { parts = []; emit = []; ctx.clearRect(0, 0, innerWidth, innerHeight); }
+
+function celebrate(pts, cells) {
+  let ti = 0; TIERS.forEach((t, i) => { if (pts >= t.min) ti = i; });
+  const t = TIERS[ti], pos = cells.map((c) => ({ x: c.x * STEP + T / 2, y: c.y * STEP + T / 2 })); // world px
+  play(t.sound, 0.8);
+
+  ratingEl.textContent = t.word; ratingEl.style.color = t.color;
+  ratingEl.style.fontSize = `min(${34 + ti * 7}px, ${(88 / (t.word.length * 0.62)).toFixed(1)}vw)`;
+  ratingEl.style.setProperty("--dur", (1.1 + ti * 0.12).toFixed(2) + "s");
+  flash(ratingEl, "show");
+
+  // Screen-edge pulse: longer, wider and brighter the higher the score (maxes out at 400).
+  const k = Math.min(pts, 400) / 400;
+  edgeEl.style.setProperty("--c", t.color);
+  edgeEl.style.setProperty("--b", 40 + k * 160 + "px");
+  edgeEl.style.setProperty("--sp", 6 + k * 40 + "px");
+  edgeEl.style.setProperty("--o", (0.4 + k * 0.6).toFixed(2));
+  edgeEl.style.setProperty("--dur", (0.5 + k * 1.7).toFixed(2) + "s");
+  flash(edgeEl, "pulse");
+
+  if (t.fx === "shapes") spawnShapes(pos);
+  else if (t.fx) emit.push({ kind: t.fx, pos, t0: performance.now(), dur: t.dur });
+  if (t.fx && !fxRaf) { fxLast = performance.now(); fxRaf = requestAnimationFrame(fxTick); }
+}
+
+function spawnShapes(pos) {
+  for (let i = 0; i < 36; i++) {
+    const p = pickOf(pos);
+    parts.push({ kind: "shape", x: p.x + rr(-40, 40), y: p.y + rr(-40, 40), vx: rr(-50, 50), vy: rr(-50, 50),
+      age: 0, life: rr(1, 1.8), size: rr(6, 14), sides: pickOf([3, 4, 4, 5]), rot: rr(0, 6.28), vr: rr(-4, 4),
+      seed: rr(0, 6.28), color: pickOf(["#a45cf0", "#c792ff", "#7b3fe4", "#d9b3ff"]) });
+  }
+}
+
+function drawBolts(e, X, Y, k) {
+  if (Math.random() < 0.35) return; // gaps make the pulses flicker
+  ctx.save(); ctx.lineJoin = "round"; ctx.shadowColor = "#ffd23f"; ctx.shadowBlur = 14;
+  for (let n = 0; n < 3; n++) {
+    const p = pickOf(e.pos), ang = rr(0, 6.283), len = rr(40, 100), dx = Math.cos(ang), dy = Math.sin(ang);
+    ctx.beginPath(); ctx.moveTo(X(p.x), Y(p.y));
+    for (let j = 1; j <= 6; j++) {
+      const along = (len * j) / 6, off = rr(-14, 14);
+      ctx.lineTo(X(p.x + dx * along - dy * off), Y(p.y + dy * along + dx * off));
+    }
+    ctx.strokeStyle = "#fff4a8"; ctx.lineWidth = 2.2 * k; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function fxTick(now) {
+  const dt = Math.min(0.05, (now - fxLast) / 1000); fxLast = now;
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  // Particles live in world coordinates, so they follow the tiles as the camera moves.
+  const m = new DOMMatrix(getComputedStyle(world).transform), k = m.a || 1;
+  const X = (x) => m.a * x + m.e, Y = (y) => m.d * y + m.f;
+
+  emit = emit.filter((e) => now - e.t0 < e.dur);
+  for (const e of emit) {
+    if (e.kind === "electric") drawBolts(e, X, Y, k);
+    else for (const p of e.pos) {
+      if (e.kind === "bubbles" && Math.random() < 0.12)
+        parts.push({ kind: "bubble", x: p.x + rr(-20, 20), y: p.y + rr(-10, 10), vx: rr(-10, 10), vy: rr(-90, -40),
+          age: 0, life: 2, popAt: rr(0.35, 1.5), size: rr(5, 14), seed: rr(0, 6.28) });
+      if (e.kind === "flames" && Math.random() < 0.7)
+        parts.push({ kind: "flame", x: p.x + rr(-22, 22), y: p.y + rr(-10, 20), vx: rr(-20, 20), vy: rr(-170, -80),
+          age: 0, life: rr(0.5, 0.9), size: rr(10, 20), seed: 0 });
+    }
+  }
+
+  for (const p of parts) {
+    p.age += dt;
+    const wob = p.kind === "shape" || p.kind === "bubble" ? Math.sin(p.age * 5 + p.seed) * 18 : 0;
+    p.x += (p.vx + wob) * dt; p.y += p.vy * dt;
+    if (p.kind === "bubble" && p.age >= p.popAt) { p.kind = "pop"; p.age = 0; p.life = 0.2; p.vx = p.vy = 0; }
+  }
+  parts = parts.filter((p) => p.age < p.life);
+
+  for (const p of parts) {
+    const u = p.age / p.life, x = X(p.x), y = Y(p.y), r = p.size * k;
+    ctx.save();
+    if (p.kind === "shape") {
+      ctx.translate(x, y); ctx.rotate(p.rot + p.vr * p.age);
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10; ctx.fillStyle = p.color; ctx.strokeStyle = "#fff";
+      ctx.beginPath();
+      for (let i = 0; i < p.sides; i++) { const a = (i / p.sides) * 6.283; ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.closePath(); ctx.globalAlpha = (1 - u) * 0.8; ctx.fill(); ctx.globalAlpha = 1 - u; ctx.stroke();
+    } else if (p.kind === "bubble") {
+      ctx.fillStyle = "rgba(255,110,199,.18)"; ctx.strokeStyle = "#ff9ad5"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.beginPath(); ctx.arc(x, y, r * 0.65, 3.6, 4.5); ctx.stroke();
+    } else if (p.kind === "pop") {
+      ctx.globalAlpha = 1 - u; ctx.strokeStyle = "#ff9ad5"; ctx.fillStyle = "#ffd0ec"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, r * (1 + u * 0.9), 0, 6.283); ctx.stroke();
+      for (let i = 0; i < 6; i++) { const a = i * 1.047 + p.seed, d = r * (1.2 + u * 1.3); ctx.beginPath(); ctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, 1.6, 0, 6.283); ctx.fill(); }
+    } else { // flame
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `hsla(${55 - 55 * u},100%,${55 - 10 * u}%,${(1 - u) * 0.8})`;
+      ctx.beginPath(); ctx.arc(x, y, Math.max(0.5, r * (1 - u * 0.6)), 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  fxRaf = emit.length || parts.length ? requestAnimationFrame(fxTick) : 0;
+  if (!fxRaf) ctx.clearRect(0, 0, innerWidth, innerHeight);
+}
+
 // ---------- loop ----------
 function tick(now) {
   if (!running) return;
@@ -287,7 +423,7 @@ function tick(now) {
 function start() {
   world.innerHTML = ""; tiles = new Map(); used = new Set();
   score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = [];
-  endTimers.forEach(clearTimeout); endTimers = [];
+  endTimers.forEach(clearTimeout); endTimers = []; fxClear();
   world.style.transitionDuration = ""; world.style.transitionTimingFunction = "";
   overlay.classList.remove("end"); hintBtn.hidden = false; updateHint(); layoutHint();
   scoreEl.textContent = 0; wordsEl.textContent = "0 words";
@@ -333,4 +469,4 @@ loadWords()
   .then(() => { startBtn.disabled = false; startBtn.textContent = "Play"; })
   .catch(() => { startBtn.textContent = "Couldn't load words.txt"; });
 
-layoutHint(); updateHint();
+layoutHint(); updateHint(); sizeFx();

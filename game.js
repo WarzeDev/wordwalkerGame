@@ -66,7 +66,7 @@ function makeCell(x, y, mult) {
   const el = document.createElement("div");
   el.className = "tile" + (mult === 2 ? " x2" : mult === 3 ? " x3" : "");
   el.style.left = x * STEP + "px"; el.style.top = y * STEP + "px";
-  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">x${mult}</span>` : "") + '<span class="p"></span>';
+  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">${mult}x</span>` : "") + '<span class="p"></span>';
   world.appendChild(el);
   const c = { x, y, el, mult };
   tiles.set(x + "," + y, c);
@@ -163,9 +163,9 @@ function submit() {
   if (!WORDS.has(word)) return reject("Not a word");
   let pts = 0;
   seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult; c.el.classList.add("done"); c.el.classList.remove("pop"); });
-  used.add(word); count++; score += pts;
+  used.add(word); count++; score += pts * 10;
   time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5);
-  flash(clockEl, "bump"); toast("+" + pts);
+  flash(clockEl, "bump"); toast("+" + pts * 10);
   scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
   play("correct");
   newSegment(seg);

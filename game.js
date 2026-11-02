@@ -66,7 +66,7 @@ function makeCell(x, y, mult) {
   const el = document.createElement("div");
   el.className = "tile" + (mult === 2 ? " x2" : mult === 3 ? " x3" : "");
   el.style.left = x * STEP + "px"; el.style.top = y * STEP + "px";
-  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">${mult}x</span>` : "") + '<span class="p"></span>';
+  el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">x${mult}</span>` : "") + '<span class="p"></span>';
   world.appendChild(el);
   const c = { x, y, el, mult };
   tiles.set(x + "," + y, c);
@@ -109,15 +109,26 @@ function newSegment(prev) {
   render();
 }
 
-// Centers the cursor tile in the *visible* area, so the on-screen keyboard
-// (which shrinks the visual viewport) never covers it.
+// Frames the whole current word: centers on the middle of the word and zooms out
+// just enough that all of it fits in the *visible* area (the on-screen keyboard
+// shrinks the visual viewport). Never zooms in past 1x.
+world.style.transformOrigin = "0 0";
+const MIN_ZOOM = 0.3;
 function render() {
   world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
-  const i = Math.min(seg.buf.length, seg.L - 1), c = seg.cells[i];
-  c.el.classList.add("cursor");
+  const i = Math.min(seg.buf.length, seg.L - 1);
+  seg.cells[i].el.classList.add("cursor");
+
+  const a = seg.cells[0], b = seg.cells[seg.L - 1];
+  const minX = Math.min(a.x, b.x), maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y), maxY = Math.max(a.y, b.y);
+  const w = (maxX - minX) * STEP + T, h = (maxY - minY) * STEP + T;
+  const mx = minX * STEP + w / 2, my = minY * STEP + h / 2; // word center, world px
+
   const vv = window.visualViewport || { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0 };
+  const s = Math.max(MIN_ZOOM, Math.min(1, (vv.width - 32) / w, (vv.height - 100) / h));
   const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30;
-  world.style.transform = `translate(${cx - (c.x * STEP + T / 2)}px,${cy - (c.y * STEP + T / 2)}px)`;
+  world.style.transform = `translate(${cx - mx * s}px,${cy - my * s}px) scale(${s})`;
 }
 
 // ---------- input ----------
@@ -152,9 +163,9 @@ function submit() {
   if (!WORDS.has(word)) return reject("Not a word");
   let pts = 0;
   seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult; c.el.classList.add("done"); c.el.classList.remove("pop"); });
-  used.add(word); count++; score += pts * 10;
+  used.add(word); count++; score += pts;
   time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5);
-  flash(clockEl, "bump"); toast("+" + pts * 10);
+  flash(clockEl, "bump"); toast("+" + pts);
   scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
   play("correct");
   newSegment(seg);

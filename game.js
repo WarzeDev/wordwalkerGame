@@ -31,22 +31,26 @@ const scoreEl = $("score"), wordsEl = $("words"), clockEl = $("clock");
 const barEl = $("clockbar"), clockText = $("clocktext");
 const hintBtn = $("hint"), hintNum = $("hintnum");
 
+// ---------- settings ----------
+const DEFAULTS = { fx: true, music: 50, sfx: 100, auto: false };
+const settings = { ...DEFAULTS };
+try { Object.assign(settings, JSON.parse(localStorage.getItem("wordwalker-settings")) || {}); } catch (e) {}
+const saveSettings = () => { try { localStorage.setItem("wordwalker-settings", JSON.stringify(settings)); } catch (e) {} };
+
 // ---------- audio ----------
 const snd = {};
 for (const k in AUDIO) { const a = new Audio(AUDIO[k]); a.preload = "auto"; snd[k] = a; }
-snd.music.loop = true; snd.music.volume = 0.35;
-let muted = false;
+snd.music.loop = true;
 function play(name, vol = 0.7) {
-  if (muted) return;
-  try { const a = snd[name].cloneNode(); a.volume = vol; a.play().catch(() => {}); } catch (e) {}
+  const v = Math.min(1, vol * settings.sfx / 100);
+  if (!v) return;
+  try { const a = snd[name].cloneNode(); a.volume = v; a.play().catch(() => {}); } catch (e) {}
 }
-function startMusic() { if (!muted) snd.music.play().catch(() => {}); }
-$("mute").onclick = () => {
-  muted = !muted;
-  $("mute").classList.toggle("muted", muted);
-  muted ? snd.music.pause() : (running && startMusic());
-  running && focusKb();
-};
+function applyMusic() {
+  snd.music.volume = Math.min(1, settings.music / 100 * 0.7); // slider 50 = the old 0.35
+  if (!settings.music) snd.music.pause(); else if (running) startMusic();
+}
+function startMusic() { if (settings.music) snd.music.play().catch(() => {}); }
 
 // ---------- word list (fetched once, then kept in localStorage) ----------
 let WORDS = new Set(), BYLEN = null;
@@ -69,6 +73,7 @@ async function loadWords() {
 
 // ---------- state ----------
 let tiles, used, seg, score, count, time, running = false, last = 0, mStart = 0, finalMs = 0;
+let paused = false, pauseAt = 0, autoBusy = false;
 let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = clock running (after the 3rd word)
 // bests[normal/hardcore] = score, bests.marathon = fastest time in ms
 const bests = {};
@@ -179,8 +184,23 @@ function showAll() {
 }
 
 // ---------- input ----------
+// Auto type: fills in forced (inherited) letters as soon as the cursor reaches them.
+function autoFill() {
+  if (autoBusy || !settings.auto) return;
+  autoBusy = true;
+  try {
+    while (running && !paused && seg.buf.length < seg.L && seg.fx.has(seg.buf.length)) {
+      const s = seg, n = seg.buf.length;
+      type(seg.cells[n].prov);
+      if (seg === s && seg.buf.length === n) break;
+    }
+  } finally { autoBusy = false; }
+}
+
 function type(ch) {
-  if (!running || seg.buf.length >= seg.L) return;
+  if (!running || paused) return;
+  autoFill();
+  if (seg.buf.length >= seg.L) return;
   const i = seg.buf.length, c = seg.cells[i];
   if (seg.fx.has(i) && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
   if (count === 0 && !seg.touched) { seg.touched = true; seg.t0 = performance.now(); if (mode === "marathon") mStart = seg.t0; } // first word is timed from its first letter
@@ -190,16 +210,18 @@ function type(ch) {
   play("type", 0.5);
   if (seg.buf.length === seg.L) submit();
   render();
+  autoFill();
 }
 
 function back() {
-  if (!running || !seg.buf.length) return;
+  if (!running || paused || !seg.buf.length) return;
   seg.cells.forEach((c) => c.el.classList.remove("bad"));
   const i = seg.buf.length - 1, c = seg.cells[i];
   seg.buf.pop(); c.el.classList.remove("typed");
   if (seg.fx.has(i)) { c.el.classList.add("pending"); c.letter = c.prov; c.el.firstChild.textContent = c.prov; }
   else { c.letter = ""; c.el.firstChild.textContent = ""; c.el.querySelector(".p").textContent = ""; }
   play("backspace", 0.5); render();
+  if (settings.auto && seg.fx.has(i) && seg.buf.length) back(); // skip over forced letters
 }
 
 function flash(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
@@ -231,7 +253,7 @@ function submit() {
   play("correct", hinted ? 0.35 : 0.7);
   const finished = seg, finish = mode === "marathon" && count >= MARATHON_WORDS;
   if (finish) finalMs = performance.now() - mStart; else newSegment(seg);
-  finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
+  if (settings.fx) finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
   if (!hinted) celebrate(pts, finished.cells);
   if (finish) end();
 }
@@ -249,7 +271,7 @@ function focusKb() { kb.focus({ preventScroll: true }); }
 function syncKb() { kb.value = seg ? seg.buf.join("") : ""; }
 
 kb.addEventListener("input", () => {
-  if (!running) { kb.value = ""; return; }
+  if (!running || paused) { kb.value = seg ? seg.buf.join("") : ""; return; }
   const cur = kb.value.toLowerCase().replace(/[^a-z]/g, "");
   const buf = seg.buf.join("");
   let p = 0;
@@ -261,6 +283,8 @@ kb.addEventListener("input", () => {
 
 // Desktop path: preventDefault stops the character from also reaching the input.
 addEventListener("keydown", (e) => {
+  if (settingsOpen()) { if (e.key === "Escape") closeSettings(); return; }
+  if (running && e.key === "Escape") { openSettings(); return; }
   if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden") && !e.target.closest("#modes")) start(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "1") { e.preventDefault(); if (!e.repeat) useHint(); }
@@ -269,8 +293,8 @@ addEventListener("keydown", (e) => {
 });
 
 // Tap anywhere to (re)open the keyboard. Must happen inside a user gesture (click) for iOS.
-addEventListener("mousedown", (e) => { if (running) e.preventDefault(); }); // keep focus on the input
-addEventListener("click", () => running && focusKb());
+addEventListener("mousedown", (e) => { if (running && !paused) e.preventDefault(); }); // keep focus on the input
+addEventListener("click", () => running && !paused && focusKb());
 
 function onViewport() { layoutHint(); sizeFx(); if (running) render(); }
 addEventListener("resize", onViewport);
@@ -289,7 +313,7 @@ function clearHint() { hintTimers.forEach(clearTimeout); hintTimers = []; }
 function layoutHint() { const vv = visible(); hintBtn.style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px"; }
 
 function useHint() {
-  if (!running || mode === "hardcore" || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
+  if (!running || paused || mode === "hardcore" || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
   const { L, fx, cells } = seg, pre = seg.buf.join("");
   const todo = [];
   for (let i = seg.buf.length; i < L; i++) if (!fx.has(i)) todo.push(i);
@@ -352,6 +376,7 @@ function celebrate(pts, cells) {
   let ti = 0; TIERS.forEach((t, i) => { if (pts >= t.min) ti = i; });
   const t = TIERS[ti], pos = cells.map((c) => ({ x: c.x * STEP + T / 2, y: c.y * STEP + T / 2 })); // world px
   play(t.sound, 0.8);
+  if (!settings.fx) return; // visual effects off: sound only
 
   ratingEl.textContent = t.word; ratingEl.style.color = t.color;
   ratingEl.style.fontSize = `min(${34 + ti * 7}px, ${(88 / (t.word.length * 0.62)).toFixed(1)}vw)`;
@@ -453,6 +478,36 @@ function fxTick(now) {
   if (!fxRaf) ctx.clearRect(0, 0, innerWidth, innerHeight);
 }
 
+// ---------- settings menu ----------
+const panel = $("settings"), setFx = $("set-fx"), setMusic = $("set-music"), setSfx = $("set-sfx"), setAuto = $("set-auto");
+const settingsOpen = () => !panel.hidden;
+function syncSettingsUi() {
+  setFx.checked = settings.fx; setAuto.checked = settings.auto;
+  setMusic.value = settings.music; setSfx.value = settings.sfx;
+  $("set-music-val").textContent = settings.music + "%"; $("set-sfx-val").textContent = settings.sfx + "%";
+}
+// Opening the menu mid-game pauses it (clock, stopwatch and word timers).
+function openSettings() {
+  syncSettingsUi(); panel.hidden = false;
+  if (running && !paused) { paused = true; pauseAt = performance.now(); kb.blur(); }
+}
+function closeSettings() {
+  panel.hidden = true;
+  if (paused) {
+    const d = performance.now() - pauseAt;
+    paused = false; if (mStart) mStart += d; if (seg) seg.t0 += d; last = performance.now();
+    focusKb();
+  }
+}
+document.querySelectorAll(".gearbtn").forEach((b) => { b.onclick = () => (settingsOpen() ? closeSettings() : openSettings()); });
+$("settings-done").onclick = closeSettings;
+panel.onclick = (e) => { if (e.target === panel) closeSettings(); };
+setFx.onchange = () => { settings.fx = setFx.checked; if (!settings.fx) fxClear(); saveSettings(); };
+setAuto.onchange = () => { settings.auto = setAuto.checked; saveSettings(); };
+setMusic.oninput = () => { settings.music = +setMusic.value; $("set-music-val").textContent = settings.music + "%"; applyMusic(); saveSettings(); };
+setSfx.oninput = () => { settings.sfx = +setSfx.value; $("set-sfx-val").textContent = settings.sfx + "%"; saveSettings(); };
+setSfx.onchange = () => play("correct"); // preview
+
 // ---------- modes ----------
 const MODE_DESC = {
   normal: "Beat the clock. Every word buys you more time.",
@@ -472,6 +527,7 @@ modeBtns.forEach((b) => { b.onclick = () => { if (!running) setMode(b.dataset.mo
 // ---------- loop ----------
 function tick(now) {
   if (!running) return;
+  if (paused) { last = now; return requestAnimationFrame(tick); }
   if (mode === "marathon") { // count up, bar = progress
     const el = mStart ? Math.max(0, performance.now() - mStart) / 1000 : 0;
     barEl.style.width = (count / MARATHON_WORDS) * 100 + "%";
@@ -489,6 +545,7 @@ function tick(now) {
 
 function start() {
   const marathon = mode === "marathon";
+  paused = false;
   world.innerHTML = ""; tiles = new Map(); used = new Set();
   score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = []; mStart = 0; finalMs = 0;
   endTimers.forEach(clearTimeout); endTimers = []; fxClear();
@@ -531,6 +588,7 @@ function end() {
 }
 
 // ---------- boot ----------
+applyMusic();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); // ask the browser not to evict it
 
 const startBtn = $("start");

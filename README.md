@@ -40,6 +40,14 @@ Pick a mode on the start screen. Each mode keeps its own best (Marathon keeps yo
 - **Marathon**: no clock and no time limit. Complete **30 words** as fast as you can; the bar shows your progress and the stopwatch starts at your first letter. The stats screen shows your final time. You only get the **2 starting hints**, no more are earned.
 - **Hardcore**: hints are disabled, and every invalid or repeated word submission costs you **3 seconds**. From the 4th word on there is an increasing chance (up to 60%) that the next word has to **bridge over an older letter**: a letter from a previous word further along the line is already placed, so your word must contain both it and the inherited letter. Bridge words are 7 letters at most, and the game only picks spots where at least 5 words fit.
 
+### Settings
+
+Tap the gear (main menu, or top right during a game; **Esc** also opens it). Opening it mid-game pauses the game. Settings are saved in your browser.
+
+- **Visual Effects**: score celebrations, screen pulses, particles and the word shine. Turn off for a plainer look.
+- **Music** and **Sound effects**: volume sliders.
+- **Auto type forced letters**: the inherited letters (and bridge letters) are typed for you as soon as you reach them, and Backspace skips over them.
+
 ### Scoring
 
 - Every letter is worth its **Scrabble value** (E = 1, D = 2, B = 3, K = 5, Q = 10, and so on). The value is shown in the bottom right of the tile once you type the letter. The inherited letter is worth nothing.

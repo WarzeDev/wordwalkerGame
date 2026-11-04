@@ -78,6 +78,10 @@ body {
   background: #e5484d;
 }
 
+#clock.marathon #clockbar {
+  transition: width 0.3s, background 0.3s;
+}
+
 #clocktext {
   position: absolute;
   inset: 0;
@@ -90,6 +94,10 @@ body {
 
 #clock.bump {
   animation: bump 0.35s;
+}
+
+#clock.hit {
+  animation: hit 0.4s;
 }
 
 /* ---------- world & tiles ---------- */
@@ -433,6 +441,32 @@ body:not(.intro) #hint {
   opacity: 0.85;
 }
 
+/* mode picker */
+#modes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#overlay #modes button {
+  padding: 8px 16px;
+  background: #262a35;
+  border: 2px solid transparent;
+  font-size: 16px;
+}
+
+#overlay #modes button.on {
+  background: #2f5d46;
+  border-color: #4caf7d;
+}
+
+#modedesc {
+  min-height: 1.5em;
+  margin: 4px 0 10px;
+}
+
 #overlay button {
   padding: 12px 40px;
   background: #4caf7d;
@@ -530,6 +564,13 @@ body:not(.intro) #hint {
   50% {
     transform: scale(1.04);
     box-shadow: 0 0 14px #4caf7d;
+  }
+}
+
+@keyframes hit {
+  50% {
+    transform: translateX(-4px);
+    box-shadow: 0 0 14px #e5484d;
   }
 }
 

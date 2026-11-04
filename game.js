@@ -1,7 +1,9 @@
 "use strict";
 // ---------- config ----------
 const T = 56, G = 6, STEP = T + G;
-const START_TIME = 30, MAX_TIME = 60;
+const START_TIME = 20, MAX_TIME = 40;
+const MARATHON_WORDS = 30, HARDCORE_PENALTY = 3;
+const BEST_KEY = { normal: "wordwalker-best", marathon: "wordwalker-best-marathon", hardcore: "wordwalker-best-hardcore" };
 // Scrabble letter values
 const LV = {
   a: 1, b: 3, c: 3, d: 2, e: 1, f: 4, g: 2, h: 4, i: 1, j: 8, k: 5, l: 1, m: 3,
@@ -47,7 +49,13 @@ $("mute").onclick = () => {
 };
 
 // ---------- word list (fetched once, then kept in localStorage) ----------
-let WORDS = new Set();
+let WORDS = new Set(), BYLEN = null;
+
+// Words grouped by length
+function byLen(L) {
+  if (!BYLEN) { BYLEN = []; for (const w of WORDS) (BYLEN[w.length] ||= []).push(w); }
+  return BYLEN[L] || [];
+}
 
 async function loadWords() {
   let txt;
@@ -56,13 +64,23 @@ async function loadWords() {
     txt = await (await fetch("words.txt")).text();
     try { localStorage.setItem("wordwalker_words", txt); } catch (e) {}
   }
-  WORDS = new Set(txt.trim().toLowerCase().split(/\s+/));
+  WORDS = new Set(txt.trim().toLowerCase().split(/\s+/)); BYLEN = null;
 }
 
 // ---------- state ----------
-let tiles, used, seg, score, count, time, running = false, last = 0, best = 0;
+let tiles, used, seg, score, count, time, running = false, last = 0, mStart = 0, finalMs = 0;
 let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = clock running (after the 3rd word)
-try { best = +localStorage.getItem("wordwalker-best") || 0; } catch (e) {}
+// bests[normal/hardcore] = score, bests.marathon = fastest time in ms
+const bests = {};
+for (const m in BEST_KEY) { try { bests[m] = +localStorage.getItem(BEST_KEY[m]) || 0; } catch (e) { bests[m] = 0; } }
+let mode = "normal";
+try { mode = localStorage.getItem("wordwalker-mode") || "normal"; } catch (e) {}
+if (!BEST_KEY[mode]) mode = "normal";
+// 75.3 -> "1:15.3", 8.2 -> "8.2s"
+function fmt(sec) {
+  const t = Math.round(sec * 10), m = Math.floor(t / 600), r = (t % 600) / 10;
+  return m ? m + ":" + r.toFixed(1).padStart(4, "0") : r.toFixed(1) + "s";
+}
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
 function toast(msg) {
@@ -98,7 +116,7 @@ function randMult() {
 }
 
 function newSegment(prev) {
-  let dir, L, a, px = 0, py = 0;
+  let dir, L, a, px = 0, py = 0, fx = new Set();
   if (!prev) { dir = 0; L = rnd(3, 6); a = -1; }
   else {
     dir = 1 - prev.dir; px = prev.cells[prev.L - 1].x; py = prev.cells[prev.L - 1].y;
@@ -112,20 +130,21 @@ function newSegment(prev) {
       a = Math.random() < pAnchor && tries < 30 ? rnd(1, L - 1) : 0;
       if (fits(L, a) || tries > 60) break;
     }
+    fx.add(a);
   }
   const dx = dir === 0 ? 1 : 0, dy = dir === 1 ? 1 : 0, cells = [];
   for (let i = 0; i < L; i++) {
     const x = px + dx * (i - Math.max(a, 0)), y = py + dy * (i - Math.max(a, 0));
-    if (i === a) {
+    if (fx.has(i)) { // fixed letter: an existing tile, shown dimmed until typed
       const c = tiles.get(x + "," + y);
       c.el.className = "tile pending"; const m = c.el.querySelector(".m"); if (m) m.remove();
       c.el.querySelector(".p").textContent = ""; c.el.querySelector(".g").textContent = "";
-      c.mult = 1; c.prov = prev.cells[prev.L - 1].letter; c.el.firstChild.textContent = c.prov;
+      c.mult = 1; c.prov = c.letter; c.el.firstChild.textContent = c.prov;
       cells.push(c);
     } else cells.push(makeCell(x, y, randMult()));
   }
   clearHint();
-  seg = { dir, L, a, cells, buf: [], t0: performance.now(), hinted: false };
+  seg = { dir, L, a, fx, cells, buf: [], t0: performance.now(), hinted: false, hintWord: null };
   updateTutorial();
   render();
 }
@@ -163,11 +182,11 @@ function showAll() {
 function type(ch) {
   if (!running || seg.buf.length >= seg.L) return;
   const i = seg.buf.length, c = seg.cells[i];
-  if (i === seg.a && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
-  if (count === 0 && !seg.touched) { seg.touched = true; seg.t0 = performance.now(); } // first word is timed from its first letter
+  if (seg.fx.has(i) && ch !== c.prov) { flash(c.el, "bad"); play("invalid", 0.5); return; }
+  if (count === 0 && !seg.touched) { seg.touched = true; seg.t0 = performance.now(); if (mode === "marathon") mStart = seg.t0; } // first word is timed from its first letter
   seg.buf.push(ch); c.letter = ch; c.el.firstChild.textContent = ch; c.el.classList.add("typed");
   c.el.classList.remove("pending"); flash(c.el, "pop");
-  if (i !== seg.a) c.el.querySelector(".p").textContent = LV[ch]; // inherited letter scores nothing
+  if (!seg.fx.has(i)) c.el.querySelector(".p").textContent = LV[ch]; // inherited letter scores nothing
   play("type", 0.5);
   if (seg.buf.length === seg.L) submit();
   render();
@@ -178,7 +197,7 @@ function back() {
   seg.cells.forEach((c) => c.el.classList.remove("bad"));
   const i = seg.buf.length - 1, c = seg.cells[i];
   seg.buf.pop(); c.el.classList.remove("typed");
-  if (i === seg.a) { c.el.classList.add("pending"); c.letter = c.prov; c.el.firstChild.textContent = c.prov; }
+  if (seg.fx.has(i)) { c.el.classList.add("pending"); c.letter = c.prov; c.el.firstChild.textContent = c.prov; }
   else { c.letter = ""; c.el.firstChild.textContent = ""; c.el.querySelector(".p").textContent = ""; }
   play("backspace", 0.5); render();
 }
@@ -187,25 +206,34 @@ function flash(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.clas
 
 function submit() {
   const word = seg.buf.join("");
-  const reject = (msg) => { seg.cells.forEach((c) => flash(c.el, "bad")); toast(msg); play("invalid"); };
+  const reject = (msg) => {
+    seg.cells.forEach((c) => flash(c.el, "bad")); play("invalid");
+    if (mode === "hardcore" && started) { time -= HARDCORE_PENALTY; flash(clockEl, "hit"); msg += ` (-${HARDCORE_PENALTY}s)`; }
+    toast(msg);
+  };
   if (used.has(word)) return reject("Already used!");
   if (!WORDS.has(word)) return reject("Not a word");
+  const hinted = word === seg.hintWord; // typing the exact hinted word: no points, no bonuses
   let pts = 0;
-  seg.cells.forEach((c, i) => { if (i !== seg.a) pts += LV[c.letter] * c.mult * 10; c.el.classList.add("done"); c.el.classList.remove("pop"); });
+  seg.cells.forEach((c, i) => { if (!seg.fx.has(i)) pts += LV[c.letter] * c.mult * 10; c.el.classList.add("done"); c.el.classList.remove("pop"); });
+  if (hinted) pts = 0;
   used.add(word); count++; score += pts;
-  if (started) time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5); // the 3 intro words are free
-  log.push({ word, pts, ms: performance.now() - seg.t0 });
-  let msg = "+" + pts;
-  if (count % 10 === 0) { hints++; msg += " - +1 hint"; }
+  if (started && !hinted && mode !== "marathon") time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5); // the 3 intro words are free
+  log.push({ word, pts, ms: performance.now() - seg.t0, hinted });
+  let msg = hinted ? "Hinted word - no points" : "+" + pts;
+  if (mode === "normal" && !hinted && count % 10 === 0) { hints++; msg += " - +1 hint"; } // marathon/hardcore never earn hints
   updateHint();
   if (count === 3) { started = true; last = performance.now(); document.body.classList.remove("intro"); } // reveal HUD, start clock
-  flash(clockEl, "bump"); toast(msg);
-  scoreEl.textContent = score; wordsEl.textContent = count + (count === 1 ? " word" : " words");
-  play("correct");
-  const finished = seg;
-  newSegment(seg);
+  if (!hinted) flash(clockEl, "bump");
+  toast(msg);
+  scoreEl.textContent = score;
+  wordsEl.textContent = mode === "marathon" ? `${count} / ${MARATHON_WORDS}` : count + (count === 1 ? " word" : " words");
+  play("correct", hinted ? 0.35 : 0.7);
+  const finished = seg, finish = mode === "marathon" && count >= MARATHON_WORDS;
+  if (finish) finalMs = performance.now() - mStart; else newSegment(seg);
   finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
-  celebrate(pts, finished.cells);
+  if (!hinted) celebrate(pts, finished.cells);
+  if (finish) end();
 }
 
 // ---------- keyboard (desktop + mobile) ----------
@@ -233,7 +261,7 @@ kb.addEventListener("input", () => {
 
 // Desktop path: preventDefault stops the character from also reaching the input.
 addEventListener("keydown", (e) => {
-  if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden")) start(); return; }
+  if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden") && !e.target.closest("#modes")) start(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "1") { e.preventDefault(); if (!e.repeat) useHint(); }
   else if (e.key === "Backspace") { e.preventDefault(); back(); syncKb(); }
@@ -261,16 +289,17 @@ function clearHint() { hintTimers.forEach(clearTimeout); hintTimers = []; }
 function layoutHint() { const vv = visible(); hintBtn.style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px"; }
 
 function useHint() {
-  if (!running || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
-  const { L, a, cells } = seg, pre = seg.buf.join(""), prov = a >= 0 ? cells[a].prov : null;
+  if (!running || mode === "hardcore" || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
+  const { L, fx, cells } = seg, pre = seg.buf.join("");
   const todo = [];
-  for (let i = seg.buf.length; i < L; i++) if (i !== a) todo.push(i);
+  for (let i = seg.buf.length; i < L; i++) if (!fx.has(i)) todo.push(i);
   if (!todo.length) return;
+  const fixed = [...fx].map((i) => [i, cells[i].prov]);
   const pool = [];
-  for (const w of WORDS) if (w.length === L && !used.has(w) && w.startsWith(pre) && (a < 0 || w[a] === prov)) pool.push(w);
+  for (const w of byLen(L)) if (!used.has(w) && w.startsWith(pre) && fixed.every(([i, ch]) => w[i] === ch)) pool.push(w);
   if (!pool.length) return toast("No hint available");
   const word = pool[rnd(0, pool.length - 1)];
-  hints--; seg.hinted = true; updateHint();
+  hints--; seg.hinted = true; seg.hintWord = word; updateHint();
   todo.forEach((idx, k) => hintTimers.push(setTimeout(() => {
     cells[idx].el.querySelector(".g").textContent = word[idx];
   }, (1000 * k) / todo.length)));
@@ -284,7 +313,10 @@ function statsHtml(isBest) {
   const row = (k, v) => `<div>${k}</div><b>${v}</b>`;
   const top = n && log.reduce((a, b) => (b.pts > a.pts ? b : a));
   const fast = n && log.reduce((a, b) => (b.ms < a.ms ? b : a));
-  return row("Score", score) + row("Best", best + (isBest ? " (New!)" : ""))
+  const head = mode === "marathon"
+    ? row("Final time", fmt(finalMs / 1000)) + row("Best time", fmt(bests.marathon / 1000) + (isBest ? " (New!)" : "")) + row("Score", score)
+    : row("Score", score) + row("Best", bests[mode] + (isBest ? " (New!)" : ""));
+  return head
     + row("Words used", n)
     + row("Highest scoring word", n ? `${top.word.toUpperCase()} (${top.pts})` : "—")
     + row("Average score", n ? (score / n).toFixed(1) : "—")
@@ -421,9 +453,31 @@ function fxTick(now) {
   if (!fxRaf) ctx.clearRect(0, 0, innerWidth, innerHeight);
 }
 
+// ---------- modes ----------
+const MODE_DESC = {
+  normal: "Beat the clock. Every word buys you more time.",
+  marathon: `No clock. Complete ${MARATHON_WORDS} words as fast as you can.`,
+  hardcore: `No hints. Mistakes cost ${HARDCORE_PENALTY}s.`,
+};
+const modeBtns = document.querySelectorAll("#modes button");
+const bestText = () => bests[mode] ? (mode === "marathon" ? "Best time: " + fmt(bests.marathon / 1000) : "Best: " + bests[mode]) : "";
+function setMode(m) {
+  mode = m; try { localStorage.setItem("wordwalker-mode", m); } catch (e) {}
+  modeBtns.forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+  $("modedesc").textContent = MODE_DESC[m];
+  if (!$("stats").innerHTML) $("best").textContent = bestText(); // end screen keeps its stats
+}
+modeBtns.forEach((b) => { b.onclick = () => { if (!running) setMode(b.dataset.mode); }; });
+
 // ---------- loop ----------
 function tick(now) {
   if (!running) return;
+  if (mode === "marathon") { // count up, bar = progress
+    const el = mStart ? Math.max(0, performance.now() - mStart) / 1000 : 0;
+    barEl.style.width = (count / MARATHON_WORDS) * 100 + "%";
+    clockText.textContent = fmt(el);
+    return requestAnimationFrame(tick);
+  }
   if (started) time -= (now - last) / 1000;
   last = now;
   if (time <= 0) return end();
@@ -434,13 +488,16 @@ function tick(now) {
 }
 
 function start() {
+  const marathon = mode === "marathon";
   world.innerHTML = ""; tiles = new Map(); used = new Set();
-  score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = [];
+  score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = []; mStart = 0; finalMs = 0;
   endTimers.forEach(clearTimeout); endTimers = []; fxClear();
   world.style.transitionDuration = ""; world.style.transitionTimingFunction = "";
   document.body.classList.add("intro"); tutEl.classList.remove("show");
-  overlay.classList.remove("end"); hintBtn.hidden = false; updateHint(); layoutHint();
-  scoreEl.textContent = 0; wordsEl.textContent = "0 words";
+  overlay.classList.remove("end"); hintBtn.hidden = mode === "hardcore"; updateHint(); layoutHint();
+  clockEl.classList.toggle("marathon", marathon); clockEl.classList.remove("low");
+  barEl.style.width = marathon ? "0%" : "100%"; clockText.textContent = marathon ? "0.0s" : START_TIME.toFixed(1);
+  scoreEl.textContent = 0; wordsEl.textContent = marathon ? `0 / ${MARATHON_WORDS}` : "0 words";
   overlay.classList.add("hidden");
   newSegment(null);
   kb.value = "";
@@ -450,12 +507,15 @@ function start() {
 
 function end() {
   running = false;
+  const marathon = mode === "marathon";
   clearHint(); hintBtn.hidden = true; tutEl.classList.remove("show");
   kb.blur(); kb.value = ""; // closes the mobile keyboard
-  clockText.textContent = "0.0"; barEl.style.width = "0%"; clockEl.classList.remove("low");
-  const isBest = score > best;
-  if (isBest) { best = score; try { localStorage.setItem("wordwalker-best", best); } catch (e) {} }
-  overlay.querySelector("h1").textContent = "Time's up!";
+  clockEl.classList.remove("low");
+  if (marathon) { clockText.textContent = fmt(finalMs / 1000); barEl.style.width = "100%"; }
+  else { clockText.textContent = "0.0"; barEl.style.width = "0%"; }
+  const isBest = marathon ? !bests.marathon || finalMs < bests.marathon : score > bests[mode];
+  if (isBest) { bests[mode] = marathon ? Math.round(finalMs) : score; try { localStorage.setItem(BEST_KEY[mode], bests[mode]); } catch (e) {} }
+  overlay.querySelector("h1").textContent = marathon ? "Marathon complete!" : "Time's up!";
   $("best").textContent = "";
   $("stats").innerHTML = statsHtml(isBest);
   $("start").textContent = "Play again";
@@ -470,8 +530,6 @@ function end() {
   ];
 }
 
-$("best").textContent = best ? "Best: " + best : "";
-
 // ---------- boot ----------
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); // ask the browser not to evict it
 
@@ -483,4 +541,4 @@ loadWords()
   .then(() => { startBtn.disabled = false; startBtn.textContent = "Play"; })
   .catch(() => { startBtn.textContent = "Couldn't load words.txt"; });
 
-layoutHint(); updateHint(); sizeFx();
+layoutHint(); updateHint(); sizeFx(); setMode(mode);

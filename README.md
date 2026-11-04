@@ -28,9 +28,17 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies.
 4. The inherited letter is shown dimmed until you type it. You still have to type it, and it has to match.
 5. If a word is not valid, or you already used it, the tiles flash red. Press **Backspace** and try another.
 6. The first two words come with a short on-screen tutorial. The score, clock, word count and hint button stay hidden and fade in once you have completed **3 words**. The clock starts then, and the first 3 words are free. Keep going until it runs out.
-7. Stuck? Tap the 💡 button (bottom right) or press **1** to reveal a random valid word as faint ghost letters over 5 seconds. You still have to type it. You start with **2 hints** and earn **1 more every 10 words**.
+7. Stuck? Tap the 💡 button (bottom right) or press **1** to reveal a random valid word as faint ghost letters over 5 seconds. You still have to type it. You start with **2 hints** and earn **1 more every 10 words** (Normal mode only). If you type exactly the word the hint suggested, it grants no points, no time and no celebration, so deviate from it a little to get full points.
 
 When time is up the camera pans out to show your whole path, followed by your stats: highest scoring word, average score, words used, fastest word and average word time.
+
+### Modes
+
+Pick a mode on the start screen. Each mode keeps its own best (Marathon keeps your fastest time).
+
+- **Normal**: the classic game described above.
+- **Marathon**: no clock and no time limit. Complete **30 words** as fast as you can; the bar shows your progress and the stopwatch starts at your first letter. The stats screen shows your final time. You only get the **2 starting hints**, no more are earned.
+- **Hardcore**: hints are disabled, and every invalid or repeated word submission costs you **3 seconds**. From the 4th word on there is an increasing chance (up to 60%) that the next word has to **bridge over an older letter**: a letter from a previous word further along the line is already placed, so your word must contain both it and the inherited letter. Bridge words are 7 letters at most, and the game only picks spots where at least 5 words fit.
 
 ### Scoring
 

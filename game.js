@@ -32,10 +32,19 @@ const barEl = $("clockbar"), clockText = $("clocktext");
 const hintBtn = $("hint"), hintNum = $("hintnum");
 
 // ---------- settings ----------
-const DEFAULTS = { fx: true, music: 50, sfx: 100, auto: false };
+const DEFAULTS = { fx: true, music: 50, sfx: 100, auto: false, theme: "auto" };
 const settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("wordwalker-settings")) || {}); } catch (e) {}
 const saveSettings = () => { try { localStorage.setItem("wordwalker-settings", JSON.stringify(settings)); } catch (e) {} };
+
+// ---------- theme (auto = follow the browser, live) ----------
+if (!["auto", "dark", "light"].includes(settings.theme)) settings.theme = "auto";
+const lightMQ = matchMedia("(prefers-color-scheme: light)");
+function applyTheme() {
+  document.documentElement.dataset.theme = settings.theme === "auto" ? (lightMQ.matches ? "light" : "dark") : settings.theme;
+}
+if (lightMQ.addEventListener) lightMQ.addEventListener("change", applyTheme); else if (lightMQ.addListener) lightMQ.addListener(applyTheme);
+applyTheme();
 
 // ---------- audio ----------
 const snd = {};
@@ -88,9 +97,9 @@ function fmt(sec) {
 }
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 
-function toast(msg) {
+function toast(msg, ms = 1100) {
   toastEl.textContent = msg; toastEl.classList.add("show");
-  clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), 1100);
+  clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), ms);
 }
 
 // ---------- tutorial (first two words) ----------
@@ -107,6 +116,7 @@ function updateTutorial() {
 function makeCell(x, y, mult) {
   const el = document.createElement("div");
   el.className = "tile" + (mult === 2 ? " x2" : mult === 3 ? " x3" : "");
+  if (mult > 1) el.dataset.m = mult; // survives the tile being reused as a forced letter
   el.style.left = x * STEP + "px"; el.style.top = y * STEP + "px";
   el.innerHTML = '<span class="l"></span>' + (mult > 1 ? `<span class="m">x${mult}</span>` : "") + '<span class="p"></span><span class="g"></span>';
   world.appendChild(el);
@@ -241,7 +251,12 @@ function submit() {
   if (hinted) pts = 0;
   used.add(word); count++; score += pts;
   if (started && !hinted && mode !== "marathon") time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5); // the 3 intro words are free
-  log.push({ word, pts, ms: performance.now() - seg.t0, hinted });
+  log.push({
+    word, pts, ms: performance.now() - seg.t0, hinted,
+    cells: seg.cells.slice(),
+    inh: seg.cells.map((_, i) => seg.fx.has(i)), // inherited letters score nothing
+    mults: seg.cells.map((c, i) => (seg.fx.has(i) ? 1 : c.mult)),
+  });
   let msg = hinted ? "Hinted word - no points" : "+" + pts;
   if (mode === "normal" && !hinted && count % 10 === 0) { hints++; msg += " - +1 hint"; } // marathon/hardcore never earn hints
   updateHint();
@@ -285,6 +300,7 @@ kb.addEventListener("input", () => {
 addEventListener("keydown", (e) => {
   if (settingsOpen()) { if (e.key === "Escape") closeSettings(); return; }
   if (running && e.key === "Escape") { openSettings(); return; }
+  if (review && e.key === "Escape") { showStats(); return; }
   if (!running) { if (e.key === "Enter" && !overlay.classList.contains("hidden") && !e.target.closest("#modes")) start(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "1") { e.preventDefault(); if (!e.repeat) useHint(); }
@@ -296,7 +312,7 @@ addEventListener("keydown", (e) => {
 addEventListener("mousedown", (e) => { if (running && !paused) e.preventDefault(); }); // keep focus on the input
 addEventListener("click", () => running && !paused && focusKb());
 
-function onViewport() { layoutHint(); sizeFx(); if (running) render(); }
+function onViewport() { layoutHint(); sizeFx(); if (running) render(); else if (review) { freeCam(); clampCam(); applyCam(); } }
 addEventListener("resize", onViewport);
 addEventListener("orientationchange", () => setTimeout(onViewport, 150));
 if (window.visualViewport) {
@@ -332,6 +348,14 @@ function useHint() {
 hintBtn.onclick = () => { useHint(); focusKb(); };
 
 // ---------- end-of-game stats ----------
+// Word with its letters colored by the multiplier they got (inherited letters dimmed).
+function wordHtml(w) {
+  return '<span class="wd">' + [...w.word].map((ch, i) => {
+    const cls = w.inh[i] ? "lf" : w.mults[i] === 3 ? "lx3" : w.mults[i] === 2 ? "lx2" : "";
+    return `<span${cls ? ` class="${cls}"` : ""}>${ch}</span>`;
+  }).join("") + "</span>";
+}
+
 function statsHtml(isBest) {
   const n = log.length, sec = (ms) => (ms / 1000).toFixed(1) + "s";
   const row = (k, v) => `<div>${k}</div><b>${v}</b>`;
@@ -342,11 +366,167 @@ function statsHtml(isBest) {
     : row("Score", score) + row("Best", bests[mode] + (isBest ? " (New!)" : ""));
   return head
     + row("Words used", n)
-    + row("Highest scoring word", n ? `${top.word.toUpperCase()} (${top.pts})` : "—")
+    + row("Highest scoring word", n ? `${wordHtml(top)} (${top.pts})` : "—")
     + row("Average score", n ? (score / n).toFixed(1) : "—")
-    + row("Fastest word", n ? `${fast.word.toUpperCase()} (${sec(fast.ms)})` : "—")
+    + row("Fastest word", n ? `${wordHtml(fast)} (${sec(fast.ms)})` : "—")
     + row("Average word time", n ? sec(log.reduce((t, w) => t + w.ms, 0) / n) : "—");
 }
+
+// ---------- end screen: hide stats, pan / zoom the map, inspect words ----------
+const viewport = $("viewport"), tipEl = $("tip"), reviewBar = $("reviewbar");
+let review = false, mapBox = null, wordsOf = new Map(), lastEl = null, down = null, pinchPrev = null;
+const ptrs = new Map(), cam = { x: 0, y: 0, s: 1 }, MINZ = 0.02, MAXZ = 3;
+
+// Called when the game ends: remember the map bounds and which words each tile belongs to
+// (a tile shared by two words lists both, in the order they were played).
+function prepareReview() {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const c of tiles.values()) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y); }
+  mapBox = { x0: x0 * STEP, y0: y0 * STEP, x1: x1 * STEP + T, y1: y1 * STEP + T };
+  wordsOf = new Map();
+  for (const w of log) for (const c of w.cells) { const a = wordsOf.get(c.el); if (a) a.push(w); else wordsOf.set(c.el, [w]); }
+}
+
+function readCam() { const m = new DOMMatrix(getComputedStyle(world).transform); cam.x = m.e; cam.y = m.f; cam.s = m.a || 1; }
+function applyCam() { world.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.s})`; }
+// Takes over the camera from the CSS transition (also stops a running "fit map" animation).
+function freeCam() {
+  if (world.classList.contains("free") && !refit.t) return;
+  clearTimeout(refit.t); refit.t = 0; readCam(); world.classList.add("free");
+}
+// Keeps a bit of the map on screen so it can't be dragged away completely.
+function clampCam() {
+  if (!mapBox) return;
+  const m = 80;
+  cam.s = Math.min(MAXZ, Math.max(MINZ, cam.s));
+  cam.x = Math.min(innerWidth - m - mapBox.x0 * cam.s, Math.max(m - mapBox.x1 * cam.s, cam.x));
+  cam.y = Math.min(innerHeight - m - mapBox.y0 * cam.s, Math.max(m - mapBox.y1 * cam.s, cam.y));
+}
+function zoomAt(cx, cy, f) {
+  const s = Math.min(MAXZ, Math.max(MINZ, cam.s * f)), k = s / cam.s;
+  cam.x = cx - (cx - cam.x) * k; cam.y = cy - (cy - cam.y) * k; cam.s = s;
+  clampCam(); applyCam();
+}
+function refit() {
+  hideTip(); clearTimeout(refit.t);
+  world.classList.remove("free");
+  world.style.transitionDuration = "0.5s"; world.style.transitionTimingFunction = "ease-in-out";
+  showAll();
+  refit.t = setTimeout(() => { refit.t = 0; readCam(); world.classList.add("free"); }, 550);
+}
+
+// ----- tooltip / highlight -----
+function hideTip() {
+  hlEls.forEach((e) => e.classList.remove("hl")); hlEls = []; lastEl = null;
+  tipEl.classList.remove("show");
+}
+let hlEls = [];
+function inspect(el) {
+  const ws = el && wordsOf.get(el);
+  if (!ws) { hideTip(); return false; }
+  if (el !== lastEl) {
+    hideTip(); lastEl = el;
+    ws.forEach((w) => w.cells.forEach((c) => { c.el.classList.add("hl"); hlEls.push(c.el); }));
+    tipEl.innerHTML = ws.map((w) =>
+      `<div class="tw"><div>${wordHtml(w)}</div><div class="tmeta">`
+      + (w.hinted ? "Hinted · no points" : `<b>+${w.pts}</b> points`)
+      + ` · <b>${(w.ms / 1000).toFixed(1)}s</b> to find</div></div>`).join("");
+  }
+  tipEl.classList.add("show");
+  return true;
+}
+function moveTip(x, y, touch) {
+  const r = tipEl.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  let tx, ty;
+  if (touch) { // above the finger, below it if there's no room
+    tx = x - r.width / 2; ty = y - r.height - 28; if (ty < 8) ty = y + 28;
+  } else {
+    tx = x + 16; ty = y + 16;
+    if (tx + r.width > W - 8) tx = x - r.width - 16;
+    if (ty + r.height > H - 8) ty = y - r.height - 16;
+  }
+  tx = Math.max(8, Math.min(W - r.width - 8, tx)); ty = Math.max(8, Math.min(H - r.height - 8, ty));
+  tipEl.style.transform = `translate(${tx}px,${ty}px)`;
+}
+const tileAt = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.closest(".tile"); };
+const hoverAt = (e) => { if (inspect(tileAt(e.clientX, e.clientY))) moveTip(e.clientX, e.clientY, false); };
+const tapAt = (e) => { if (inspect(tileAt(e.clientX, e.clientY))) moveTip(e.clientX, e.clientY, true); };
+
+// ----- enter / leave -----
+function enterReview() {
+  if (running || review) return;
+  review = true; freeCam();
+  overlay.classList.add("hidden"); reviewBar.hidden = false; document.body.classList.add("review");
+  toast(matchMedia("(pointer: coarse)").matches ? "Drag to pan · pinch to zoom · tap a word" : "Drag to pan · scroll to zoom · hover a word", 3500);
+}
+function showStats() {
+  if (!review) return;
+  review = false; ptrs.clear(); down = null; pinchPrev = null; hideTip();
+  viewport.classList.remove("grab"); reviewBar.hidden = true; document.body.classList.remove("review");
+  overlay.classList.remove("hidden");
+}
+function resetReview() {
+  review = false; ptrs.clear(); down = null; pinchPrev = null; hideTip(); wordsOf = new Map();
+  clearTimeout(refit.t); refit.t = 0;
+  viewport.classList.remove("grab"); reviewBar.hidden = true; document.body.classList.remove("review");
+  world.classList.remove("free");
+}
+$("viewmap").onclick = enterReview;
+$("showstats").onclick = showStats;
+$("refit").onclick = refit;
+
+// ----- pointer input: one finger / mouse drag pans, two fingers pinch, wheel zooms -----
+const pinchState = () => {
+  const [a, b] = [...ptrs.values()];
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+};
+viewport.addEventListener("pointerdown", (e) => {
+  if (!review) return;
+  freeCam(); hideTip();
+  try { viewport.setPointerCapture(e.pointerId); } catch (err) {}
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 1) down = { x: e.clientX, y: e.clientY, moved: false };
+  else { if (down) down.moved = true; if (ptrs.size === 2) pinchPrev = pinchState(); }
+  viewport.classList.add("grab");
+});
+viewport.addEventListener("pointermove", (e) => {
+  if (!review) return;
+  const p = ptrs.get(e.pointerId);
+  if (!p) { if (e.pointerType === "mouse") hoverAt(e); return; }
+  if (ptrs.size === 1) {
+    if (!down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6) return; // tap, not a drag
+    down.moved = true;
+    cam.x += e.clientX - p.x; cam.y += e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    clampCam(); applyCam();
+  } else if (ptrs.size === 2) {
+    p.x = e.clientX; p.y = e.clientY;
+    const n = pinchState();
+    cam.x += n.cx - pinchPrev.cx; cam.y += n.cy - pinchPrev.cy;
+    zoomAt(n.cx, n.cy, n.d / pinchPrev.d);
+    pinchPrev = n;
+  }
+});
+function endPtr(e) {
+  if (!ptrs.delete(e.pointerId)) return;
+  pinchPrev = null;
+  if (ptrs.size) return;
+  viewport.classList.remove("grab");
+  const tap = e.type === "pointerup" && down && !down.moved;
+  if (e.pointerType === "mouse") hoverAt(e); else if (tap) tapAt(e);
+  down = null;
+}
+viewport.addEventListener("pointerup", endPtr);
+viewport.addEventListener("pointercancel", endPtr);
+viewport.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && !ptrs.size) hideTip(); });
+viewport.addEventListener("wheel", (e) => {
+  if (!review) return;
+  e.preventDefault(); freeCam();
+  const d = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+  zoomAt(e.clientX, e.clientY, Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015)));
+  hoverAt(e);
+}, { passive: false });
+// iOS Safari: stop the page itself from pinch-zooming
+["gesturestart", "gesturechange"].forEach((n) => addEventListener(n, (e) => { if (review) e.preventDefault(); }, { passive: false }));
 
 // ---------- score celebrations ----------
 // Word + sound + pulsing screen edges + particles, scaled to the word's score.
@@ -479,10 +659,10 @@ function fxTick(now) {
 }
 
 // ---------- settings menu ----------
-const panel = $("settings"), setFx = $("set-fx"), setMusic = $("set-music"), setSfx = $("set-sfx"), setAuto = $("set-auto");
+const panel = $("settings"), setFx = $("set-fx"), setMusic = $("set-music"), setSfx = $("set-sfx"), setAuto = $("set-auto"), setTheme = $("set-theme");
 const settingsOpen = () => !panel.hidden;
 function syncSettingsUi() {
-  setFx.checked = settings.fx; setAuto.checked = settings.auto;
+  setFx.checked = settings.fx; setAuto.checked = settings.auto; setTheme.value = settings.theme;
   setMusic.value = settings.music; setSfx.value = settings.sfx;
   $("set-music-val").textContent = settings.music + "%"; $("set-sfx-val").textContent = settings.sfx + "%";
 }
@@ -504,6 +684,7 @@ $("settings-done").onclick = closeSettings;
 panel.onclick = (e) => { if (e.target === panel) closeSettings(); };
 setFx.onchange = () => { settings.fx = setFx.checked; if (!settings.fx) fxClear(); saveSettings(); };
 setAuto.onchange = () => { settings.auto = setAuto.checked; saveSettings(); };
+setTheme.onchange = () => { settings.theme = setTheme.value; applyTheme(); saveSettings(); };
 setMusic.oninput = () => { settings.music = +setMusic.value; $("set-music-val").textContent = settings.music + "%"; applyMusic(); saveSettings(); };
 setSfx.oninput = () => { settings.sfx = +setSfx.value; $("set-sfx-val").textContent = settings.sfx + "%"; saveSettings(); };
 setSfx.onchange = () => play("correct"); // preview
@@ -545,7 +726,7 @@ function tick(now) {
 
 function start() {
   const marathon = mode === "marathon";
-  paused = false;
+  paused = false; resetReview();
   world.innerHTML = ""; tiles = new Map(); used = new Set();
   score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = []; mStart = 0; finalMs = 0;
   endTimers.forEach(clearTimeout); endTimers = []; fxClear();
@@ -572,6 +753,7 @@ function end() {
   else { clockText.textContent = "0.0"; barEl.style.width = "0%"; }
   const isBest = marathon ? !bests.marathon || finalMs < bests.marathon : score > bests[mode];
   if (isBest) { bests[mode] = marathon ? Math.round(finalMs) : score; try { localStorage.setItem(BEST_KEY[mode], bests[mode]); } catch (e) {} }
+  prepareReview();
   overlay.querySelector("h1").textContent = marathon ? "Marathon complete!" : "Time's up!";
   $("best").textContent = "";
   $("stats").innerHTML = statsHtml(isBest);

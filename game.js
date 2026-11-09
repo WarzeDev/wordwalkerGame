@@ -34,13 +34,13 @@ const scoreEl = $("score"), wordsEl = $("words"), clockEl = $("clock");
 const barEl = $("clockbar"), clockText = $("clocktext");
 const hintBtn = $("hint"), hintNum = $("hintnum");
 const defEl = $("defbox"), defTag = $("deftag"), defPts = $("defpts"), defText = $("deftext"), defMeta = $("defmeta");
-
+ 
 // ---------- settings ----------
 const DEFAULTS = { fx: true, music: 50, sfx: 100, auto: false, theme: "auto" };
 const settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("wordwalker-settings")) || {}); } catch (e) {}
 const saveSettings = () => { try { localStorage.setItem("wordwalker-settings", JSON.stringify(settings)); } catch (e) {} };
-
+ 
 // ---------- theme (auto = follow the browser, live) ----------
 if (!["auto", "dark", "light"].includes(settings.theme)) settings.theme = "auto";
 const lightMQ = matchMedia("(prefers-color-scheme: light)");
@@ -49,7 +49,7 @@ function applyTheme() {
 }
 if (lightMQ.addEventListener) lightMQ.addEventListener("change", applyTheme); else if (lightMQ.addListener) lightMQ.addListener(applyTheme);
 applyTheme();
-
+ 
 // ---------- audio ----------
 const snd = {};
 for (const k in AUDIO) { const a = new Audio(AUDIO[k]); a.preload = "auto"; snd[k] = a; }
@@ -64,16 +64,16 @@ function applyMusic() {
   if (!settings.music) snd.music.pause(); else if (running) startMusic();
 }
 function startMusic() { if (settings.music) snd.music.play().catch(() => {}); }
-
+ 
 // ---------- word list (fetched once, then kept in localStorage) ----------
 let WORDS = new Set(), BYLEN = null;
-
+ 
 // Words grouped by length
 function byLen(L) {
   if (!BYLEN) { BYLEN = []; for (const w of WORDS) (BYLEN[w.length] ||= []).push(w); }
   return BYLEN[L] || [];
 }
-
+ 
 async function loadWords() {
   let txt;
   try { txt = localStorage.getItem("wordwalker_words"); } catch (e) {}
@@ -83,7 +83,7 @@ async function loadWords() {
   }
   WORDS = new Set(txt.trim().toLowerCase().split(/\s+/)); BYLEN = null;
 }
-
+ 
 // ---------- state ----------
 let tiles, used, seg, score, count, time, running = false, last = 0, mStart = 0, finalMs = 0;
 let paused = false, pauseAt = 0, autoBusy = false;
@@ -101,12 +101,12 @@ function fmt(sec) {
   return m ? m + ":" + r.toFixed(1).padStart(4, "0") : r.toFixed(1) + "s";
 }
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-
+ 
 function toast(msg, ms = 1100) {
   toastEl.textContent = msg; toastEl.classList.add("show");
   clearTimeout(toast.t); toast.t = setTimeout(() => toastEl.classList.remove("show"), ms);
 }
-
+ 
 // ---------- tutorial (first two words) ----------
 const tutEl = $("tutorial");
 function updateTutorial() {
@@ -116,7 +116,7 @@ function updateTutorial() {
     : `Now, type a <b>${seg.L}</b> letter word that starts with <b>${seg.cells[seg.a].prov.toUpperCase()}</b>`;
   tutEl.classList.add("show");
 }
-
+ 
 // ---------- segments ----------
 function makeCell(x, y, mult) {
   const el = document.createElement("div");
@@ -129,12 +129,12 @@ function makeCell(x, y, mult) {
   tiles.set(x + "," + y, c);
   return c;
 }
-
+ 
 function randMult() {
   const p3 = Math.min(0.14, 0.04 + count * 0.004), p2 = Math.min(0.22, 0.1 + count * 0.006), r = Math.random();
   return r < p3 ? 3 : r < p3 + p2 ? 2 : 1;
 }
-
+ 
 function newSegment(prev) {
   let dir, L, a, px = 0, py = 0, fx = new Set();
   if (!prev) { dir = 0; L = rnd(3, 6); a = -1; }
@@ -169,10 +169,10 @@ function newSegment(prev) {
   render();
   if (mode !== "marathon" && count >= DEF_FROM && Math.random() < DEF_CHANCE) setupDefinition(seg);
 }
-
+ 
 world.style.transformOrigin = "0 0";
 const visible = () => window.visualViewport || { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0 };
-
+ 
 // Centers a box of tiles (grid coords) in the *visible* area (the on-screen keyboard
 // shrinks the visual viewport), zooming out until it fits. Never zooms in past 1x.
 function fit(minX, maxX, minY, maxY, minZoom) {
@@ -183,7 +183,7 @@ function fit(minX, maxX, minY, maxY, minZoom) {
   const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30 - defInset / 2;
   world.style.transform = `translate(${cx - mx * s}px,${cy - my * s}px) scale(${s})`;
 }
-
+ 
 // Frames the whole current word.
 function render() {
   world.querySelectorAll(".cursor").forEach((e) => e.classList.remove("cursor"));
@@ -191,14 +191,14 @@ function render() {
   const a = seg.cells[0], b = seg.cells[seg.L - 1];
   fit(Math.min(a.x, b.x), Math.max(a.x, b.x), Math.min(a.y, b.y), Math.max(a.y, b.y), 0.3);
 }
-
+ 
 // Frames the entire map (used when the game ends).
 function showAll() {
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const c of tiles.values()) { x0 = Math.min(x0, c.x); x1 = Math.max(x1, c.x); y0 = Math.min(y0, c.y); y1 = Math.max(y1, c.y); }
   fit(x0, x1, y0, y1, 0.04);
 }
-
+ 
 // ---------- input ----------
 // Auto type: fills in forced (inherited) letters as soon as the cursor reaches them.
 function autoFill() {
@@ -212,7 +212,7 @@ function autoFill() {
     }
   } finally { autoBusy = false; }
 }
-
+ 
 function type(ch) {
   if (!running || paused) return;
   autoFill();
@@ -228,7 +228,7 @@ function type(ch) {
   render();
   autoFill();
 }
-
+ 
 function back() {
   if (!running || paused || !seg.buf.length) return;
   seg.cells.forEach((c) => c.el.classList.remove("bad"));
@@ -239,9 +239,9 @@ function back() {
   play("backspace", 0.5); render();
   if (settings.auto && seg.fx.has(i) && seg.buf.length) back(); // skip over forced letters
 }
-
+ 
 function flash(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
-
+ 
 function submit() {
   const word = seg.buf.join("");
   const reject = (msg) => {
@@ -282,7 +282,7 @@ function submit() {
   if (!finish && (defHit || defMiss)) revealDef(defHit ? word : finished.defWord, defHit);
   if (finish) end();
 }
-
+ 
 // ---------- keyboard (desktop + mobile) ----------
 // A hidden <input> is focused so phones open their on-screen keyboard.
 // Its value always mirrors the current word; on every `input` event we diff
@@ -291,10 +291,10 @@ function submit() {
 kb.setAttribute("inputmode", "text");
 kb.setAttribute("enterkeyhint", "done");
 kb.setAttribute("autocapitalize", "none");
-
+ 
 function focusKb() { kb.focus({ preventScroll: true }); }
 function syncKb() { kb.value = seg ? seg.buf.join("") : ""; }
-
+ 
 kb.addEventListener("input", () => {
   if (!running || paused) { kb.value = seg ? seg.buf.join("") : ""; return; }
   const cur = kb.value.toLowerCase().replace(/[^a-z]/g, "");
@@ -305,7 +305,7 @@ kb.addEventListener("input", () => {
   for (const ch of cur.slice(p)) type(ch);
   syncKb();
 });
-
+ 
 // Desktop path: preventDefault stops the character from also reaching the input.
 addEventListener("keydown", (e) => {
   if (settingsOpen()) { if (e.key === "Escape") closeSettings(); return; }
@@ -317,11 +317,11 @@ addEventListener("keydown", (e) => {
   else if (e.key === "Backspace") { e.preventDefault(); back(); syncKb(); }
   else if (/^[a-zA-Z]$/.test(e.key)) { e.preventDefault(); type(e.key.toLowerCase()); syncKb(); }
 });
-
+ 
 // Tap anywhere to (re)open the keyboard. Must happen inside a user gesture (click) for iOS.
 addEventListener("mousedown", (e) => { if (running && !paused) e.preventDefault(); }); // keep focus on the input
 addEventListener("click", () => running && !paused && focusKb());
-
+ 
 function onViewport() { layoutHint(); sizeFx(); if (running) render(); else if (review) { freeCam(); clampCam(); applyCam(); } }
 addEventListener("resize", onViewport);
 addEventListener("orientationchange", () => setTimeout(onViewport, 150));
@@ -329,7 +329,7 @@ if (window.visualViewport) {
   visualViewport.addEventListener("resize", onViewport);
   visualViewport.addEventListener("scroll", () => { scrollTo(0, 0); onViewport(); });
 }
-
+ 
 // ---------- hints ----------
 // Reveals a random valid word (fitting the tiles and anything already typed) as faint
 // ghost letters, one by one over 5 seconds. You still have to type it.
@@ -340,7 +340,7 @@ function layoutHint() {
   const vv = visible(), b = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px";
   hintBtn.style.bottom = b; defEl.style.bottom = b; layoutDef();
 }
-
+ 
 function useHint() {
   if (!running || paused || mode === "hardcore" || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
   const { L, fx, cells } = seg, pre = seg.buf.join("");
@@ -359,38 +359,43 @@ function useHint() {
   play("hint");
 }
 hintBtn.onclick = () => { useHint(); focusKb(); };
-
+ 
 // ---------- definition bonus ----------
 // Sometimes a definition of a random valid word (fitting the current tiles) appears at the bottom.
 // Type exactly that word for +100. Nothing is shown if the API fails or has no usable definition.
 const defCache = new Map(); // word -> { word, text, pos } | null
-
+ 
 // Skip definitions that just point at another form of a word, or that aren't suitable for a casual game.
 const DEF_SKIP = /^\W*(?:\(.*?\)\s*)?(?:alternative|obsolete|archaic|dated|nonstandard|misspelling|plural|singular|simple past|past tense|past participle|present participle|third-person|comparative|superlative|inflection|abbreviation|initialism|acronym|synonym|eye dialect|clipping|short for|contraction)\b|\b(?:form|spelling|participle|tense|plural|variant|misspelling|abbreviation) of\b|\b(?:sexual|vulgar|offensive|slur|derogatory)\b/i;
-
-// True if the definition gives the word away: contains it, or a close variant (love / loved / loving / lovely).
-function leaks(text, word) {
-  const low = text.toLowerCase();
-  if (word.length >= 4 && low.includes(word)) return true;
-  for (const t of low.match(/[a-z]+/g) || []) {
-    if (Math.abs(t.length - word.length) > 4) continue;
-    let p = 0; while (p < t.length && p < word.length && t[p] === word[p]) p++;
-    if (p >= 3 && p >= Math.min(t.length, word.length) - 1) return true;
-  }
-  return false;
+ 
+// True if a single word of the definition gives the target away: contains it, or is a close variant (love / loved / loving / lovely).
+function tokenLeaks(tok, word) {
+  tok = tok.toLowerCase();
+  if (word.length >= 4 && tok.includes(word)) return true;
+  if (Math.abs(tok.length - word.length) > 4) return false;
+  let p = 0; while (p < tok.length && p < word.length && tok[p] === word[p]) p++;
+  return p >= 3 && p >= Math.min(tok.length, word.length) - 1;
 }
-
+ 
+// Replaces every giveaway word with underscores ("To ____ deeply."). Returns null if too little is left to be a useful clue.
+function maskWord(text, word) {
+  let left = 0;
+  const out = text.replace(/[A-Za-z]+/g, (t) => (tokenLeaks(t, word) ? "_".repeat(t.length) : (left++, t)));
+  return left >= 3 ? out : null;
+}
+ 
 function pickDefinition(word, data) {
   if (!Array.isArray(data)) return null; // errors come back as { title: "No Definitions Found", ... }
   const opts = [];
   for (const e of data) for (const m of (e && e.meanings) || []) for (const d of (m && m.definitions) || []) {
-    const text = String((d && d.definition) || "").replace(/\s+/g, " ").trim();
-    if (text.length < 12 || text.length > 220 || DEF_SKIP.test(text) || leaks(text, word)) continue;
-    opts.push({ word, text, pos: m.partOfSpeech || "" }); // examples are never shown: they usually contain the word
+    const raw = String((d && d.definition) || "").replace(/\s+/g, " ").trim();
+    if (raw.length < 12 || raw.length > 220 || DEF_SKIP.test(raw)) continue;
+    const text = maskWord(raw, word); // examples are never shown: they usually contain the word
+    if (text) opts.push({ word, text, pos: m.partOfSpeech || "" });
   }
   return opts.length ? pickOf(opts) : null;
 }
-
+ 
 async function getDefinition(word) {
   if (defCache.has(word)) return defCache.get(word);
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 4000);
@@ -402,7 +407,7 @@ async function getDefinition(word) {
   } catch (e) { return null; } // offline / timeout / bad JSON: just no definition (not cached, may work later)
   finally { clearTimeout(timer); }
 }
-
+ 
 async function setupDefinition(s) {
   const pre = s.buf.join(""), fixed = [...s.fx].map((i) => [i, s.cells[i].prov]), pool = [];
   for (const w of byLen(s.L)) if (!used.has(w) && w.startsWith(pre) && fixed.every(([i, ch]) => w[i] === ch)) pool.push(w);
@@ -413,12 +418,12 @@ async function setupDefinition(s) {
     if (info) return showDef(s, info);
   }
 }
-
+ 
 function layoutDef() {
   defInset = defEl.classList.contains("show") ? defEl.offsetHeight + 28 : 0; // keeps the tiles and the toast clear of the box
   document.documentElement.style.setProperty("--definset", defInset + "px");
 }
-
+ 
 function showDef(s, info) {
   if (!running || s !== seg) return;
   if (defWin) { defQueued = { s, info }; return; } // wait until the success animation is done
@@ -429,13 +434,13 @@ function showDef(s, info) {
   defMeta.textContent = [info.pos, s.L + " letters"].filter(Boolean).join(" · ");
   defEl.classList.add("show"); layoutDef(); render();
 }
-
+ 
 function hideDef(force) {
   if (force) { clearTimeout(defWin); defWin = 0; defQueued = null; }
   if (defWin) return;
   defEl.classList.remove("show", "win", "miss"); layoutDef();
 }
-
+ 
 // Reveals the target word. Hit: glow + confetti out of the box. Miss (another word was typed): just show the answer for a moment.
 function revealDef(word, hit) {
   clearTimeout(defWin);
@@ -451,7 +456,7 @@ function revealDef(word, hit) {
     else { hideDef(); if (running) render(); }
   }, hit ? DEF_SHOW_MS : DEF_MISS_MS);
 }
-
+ 
 // ---------- end-of-game stats ----------
 // Word with its letters colored by the multiplier they got (inherited letters dimmed).
 function wordHtml(w) {
@@ -460,7 +465,7 @@ function wordHtml(w) {
     return `<span${cls ? ` class="${cls}"` : ""}>${ch}</span>`;
   }).join("") + "</span>";
 }
-
+ 
 function statsHtml(isBest) {
   const n = log.length, sec = (ms) => (ms / 1000).toFixed(1) + "s";
   const row = (k, v) => `<div>${k}</div><b>${v}</b>`;
@@ -476,12 +481,12 @@ function statsHtml(isBest) {
     + row("Fastest word", n ? `${wordHtml(fast)} (${sec(fast.ms)})` : "—")
     + row("Average word time", n ? sec(log.reduce((t, w) => t + w.ms, 0) / n) : "—");
 }
-
+ 
 // ---------- end screen: hide stats, pan / zoom the map, inspect words ----------
 const viewport = $("viewport"), tipEl = $("tip"), reviewBar = $("reviewbar");
 let review = false, mapBox = null, wordsOf = new Map(), lastEl = null, down = null, pinchPrev = null;
 const ptrs = new Map(), cam = { x: 0, y: 0, s: 1 }, MINZ = 0.02, MAXZ = 3;
-
+ 
 // Called when the game ends: remember the map bounds and which words each tile belongs to
 // (a tile shared by two words lists both, in the order they were played).
 function prepareReview() {
@@ -491,7 +496,7 @@ function prepareReview() {
   wordsOf = new Map();
   for (const w of log) for (const c of w.cells) { const a = wordsOf.get(c.el); if (a) a.push(w); else wordsOf.set(c.el, [w]); }
 }
-
+ 
 function readCam() { const m = new DOMMatrix(getComputedStyle(world).transform); cam.x = m.e; cam.y = m.f; cam.s = m.a || 1; }
 function applyCam() { world.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.s})`; }
 // Takes over the camera from the CSS transition (also stops a running "fit map" animation).
@@ -519,7 +524,7 @@ function refit() {
   showAll();
   refit.t = setTimeout(() => { refit.t = 0; readCam(); world.classList.add("free"); }, 550);
 }
-
+ 
 // ----- tooltip / highlight -----
 function hideTip() {
   hlEls.forEach((e) => e.classList.remove("hl")); hlEls = []; lastEl = null;
@@ -556,7 +561,7 @@ function moveTip(x, y, touch) {
 const tileAt = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.closest(".tile"); };
 const hoverAt = (e) => { if (inspect(tileAt(e.clientX, e.clientY))) moveTip(e.clientX, e.clientY, false); };
 const tapAt = (e) => { if (inspect(tileAt(e.clientX, e.clientY))) moveTip(e.clientX, e.clientY, true); };
-
+ 
 // ----- enter / leave -----
 function enterReview() {
   if (running || review) return;
@@ -579,7 +584,7 @@ function resetReview() {
 $("viewmap").onclick = enterReview;
 $("showstats").onclick = showStats;
 $("refit").onclick = refit;
-
+ 
 // ----- pointer input: one finger / mouse drag pans, two fingers pinch, wheel zooms -----
 const pinchState = () => {
   const [a, b] = [...ptrs.values()];
@@ -632,7 +637,7 @@ viewport.addEventListener("wheel", (e) => {
 }, { passive: false });
 // iOS Safari: stop the page itself from pinch-zooming
 ["gesturestart", "gesturechange"].forEach((n) => addEventListener(n, (e) => { if (review) e.preventDefault(); }, { passive: false }));
-
+ 
 // ---------- score celebrations ----------
 // Word + sound + pulsing screen edges + particles, scaled to the word's score.
 const TIERS = [
@@ -649,25 +654,25 @@ const ctx = fx.getContext("2d");
 let parts = [], emit = [], fxRaf = 0, fxLast = 0;
 const rr = (a, b) => a + Math.random() * (b - a);
 const pickOf = (a) => a[Math.floor(Math.random() * a.length)];
-
+ 
 function sizeFx() {
   const d = devicePixelRatio || 1;
   fx.width = Math.round(innerWidth * d); fx.height = Math.round(innerHeight * d);
   ctx.setTransform(d, 0, 0, d, 0, 0);
 }
 function fxClear() { parts = []; emit = []; ctx.clearRect(0, 0, innerWidth, innerHeight); }
-
+ 
 function celebrate(pts, cells) {
   let ti = 0; TIERS.forEach((t, i) => { if (pts >= t.min) ti = i; });
   const t = TIERS[ti], pos = cells.map((c) => ({ x: c.x * STEP + T / 2, y: c.y * STEP + T / 2 })); // world px
   play(t.sound, 0.8);
   if (!settings.fx) return; // visual effects off: sound only
-
+ 
   ratingEl.textContent = t.word; ratingEl.style.color = t.color;
   ratingEl.style.fontSize = `min(${34 + ti * 7}px, ${(88 / (t.word.length * 0.62)).toFixed(1)}vw)`;
   ratingEl.style.setProperty("--dur", (1.1 + ti * 0.12).toFixed(2) + "s");
   flash(ratingEl, "show");
-
+ 
   // Screen-edge pulse: longer, wider and brighter the higher the score (maxes out at 400).
   const k = Math.min(pts, 400) / 400;
   edgeEl.style.setProperty("--c", t.color);
@@ -676,12 +681,12 @@ function celebrate(pts, cells) {
   edgeEl.style.setProperty("--o", (0.4 + k * 0.6).toFixed(2));
   edgeEl.style.setProperty("--dur", (0.5 + k * 1.7).toFixed(2) + "s");
   flash(edgeEl, "pulse");
-
+ 
   if (t.fx === "shapes") spawnShapes(pos);
   else if (t.fx) emit.push({ kind: t.fx, pos, t0: performance.now(), dur: t.dur });
   if (t.fx && !fxRaf) { fxLast = performance.now(); fxRaf = requestAnimationFrame(fxTick); }
 }
-
+ 
 // Confetti bursts out of the definition box. Particles with s:1 live in screen coordinates (not world).
 function confetti() {
   const r = defEl.getBoundingClientRect(), cols = ["#ffd166", "#4cd97b", "#ff6ec7", "#6ec1ff", "#b36bff", "#ff7a59", "#ffffff"];
@@ -690,7 +695,7 @@ function confetti() {
       age: 0, life: rr(1.3, 2.2), size: rr(5, 10), rot: rr(0, 6.28), vr: rr(-10, 10), seed: rr(0, 6.28), color: pickOf(cols) });
   if (!fxRaf) { fxLast = performance.now(); fxRaf = requestAnimationFrame(fxTick); }
 }
-
+ 
 function spawnShapes(pos) {
   for (let i = 0; i < 36; i++) {
     const p = pickOf(pos);
@@ -699,7 +704,7 @@ function spawnShapes(pos) {
       seed: rr(0, 6.28), color: pickOf(["#a45cf0", "#c792ff", "#7b3fe4", "#d9b3ff"]) });
   }
 }
-
+ 
 function drawBolts(e, X, Y, k) {
   if (Math.random() < 0.35) return; // gaps make the pulses flicker
   ctx.save(); ctx.lineJoin = "round"; ctx.shadowColor = "#ffd23f"; ctx.shadowBlur = 14;
@@ -714,14 +719,14 @@ function drawBolts(e, X, Y, k) {
   }
   ctx.restore();
 }
-
+ 
 function fxTick(now) {
   const dt = Math.min(0.05, (now - fxLast) / 1000); fxLast = now;
   ctx.clearRect(0, 0, innerWidth, innerHeight);
   // Particles live in world coordinates, so they follow the tiles as the camera moves.
   const m = new DOMMatrix(getComputedStyle(world).transform), k = m.a || 1;
   const X = (x) => m.a * x + m.e, Y = (y) => m.d * y + m.f;
-
+ 
   emit = emit.filter((e) => now - e.t0 < e.dur);
   for (const e of emit) {
     if (e.kind === "electric") drawBolts(e, X, Y, k);
@@ -734,7 +739,7 @@ function fxTick(now) {
           age: 0, life: rr(0.5, 0.9), size: rr(10, 20), seed: 0 });
     }
   }
-
+ 
   for (const p of parts) {
     p.age += dt;
     const wob = p.kind === "shape" || p.kind === "bubble" ? Math.sin(p.age * 5 + p.seed) * 18 : 0;
@@ -743,7 +748,7 @@ function fxTick(now) {
     if (p.kind === "bubble" && p.age >= p.popAt) { p.kind = "pop"; p.age = 0; p.life = 0.2; p.vx = p.vy = 0; }
   }
   parts = parts.filter((p) => p.age < p.life);
-
+ 
   for (const p of parts) {
     const u = p.age / p.life, x = p.s ? p.x : X(p.x), y = p.s ? p.y : Y(p.y), r = p.size * (p.s ? 1 : k);
     ctx.save();
@@ -773,11 +778,11 @@ function fxTick(now) {
     }
     ctx.restore();
   }
-
+ 
   fxRaf = emit.length || parts.length ? requestAnimationFrame(fxTick) : 0;
   if (!fxRaf) ctx.clearRect(0, 0, innerWidth, innerHeight);
 }
-
+ 
 // ---------- settings menu ----------
 const panel = $("settings"), setFx = $("set-fx"), setMusic = $("set-music"), setSfx = $("set-sfx"), setAuto = $("set-auto"), setTheme = $("set-theme");
 const settingsOpen = () => !panel.hidden;
@@ -808,7 +813,7 @@ setTheme.onchange = () => { settings.theme = setTheme.value; applyTheme(); saveS
 setMusic.oninput = () => { settings.music = +setMusic.value; $("set-music-val").textContent = settings.music + "%"; applyMusic(); saveSettings(); };
 setSfx.oninput = () => { settings.sfx = +setSfx.value; $("set-sfx-val").textContent = settings.sfx + "%"; saveSettings(); };
 setSfx.onchange = () => play("correct"); // preview
-
+ 
 // ---------- modes ----------
 const MODE_DESC = {
   normal: "Beat the clock. Every word buys you more time.",
@@ -824,7 +829,7 @@ function setMode(m) {
   if (!$("stats").innerHTML) $("best").textContent = bestText(); // end screen keeps its stats
 }
 modeBtns.forEach((b) => { b.onclick = () => { if (!running) setMode(b.dataset.mode); }; });
-
+ 
 // ---------- loop ----------
 function tick(now) {
   if (!running) return;
@@ -843,7 +848,7 @@ function tick(now) {
   clockEl.classList.toggle("low", time < 8);
   requestAnimationFrame(tick);
 }
-
+ 
 function start() {
   const marathon = mode === "marathon";
   paused = false; resetReview();
@@ -862,7 +867,7 @@ function start() {
   startMusic(); focusKb();
   last = performance.now(); requestAnimationFrame(tick);
 }
-
+ 
 function end() {
   running = false;
   const marathon = mode === "marathon";
@@ -888,11 +893,11 @@ function end() {
     setTimeout(() => { overlay.classList.add("end"); overlay.classList.remove("hidden"); }, 3500),
   ];
 }
-
+ 
 // ---------- boot ----------
 applyMusic();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); // ask the browser not to evict it
-
+ 
 const startBtn = $("start");
 startBtn.disabled = true;
 startBtn.textContent = "Loading words…";
@@ -900,5 +905,5 @@ startBtn.onclick = start;
 loadWords()
   .then(() => { startBtn.disabled = false; startBtn.textContent = "Play"; })
   .catch(() => { startBtn.textContent = "Couldn't load words.txt"; });
-
+ 
 layoutHint(); updateHint(); sizeFx(); setMode(mode);

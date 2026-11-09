@@ -18,7 +18,7 @@
 
 Wordwalker is a fast word game for the browser. A path of empty tiles stretches out in front of you: think of an English word that fits, type it, and the path continues from its last letter, turning a corner each time. Right, then down, then right again. The clock is always ticking, and every valid word buys you more time.
 
-Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies.
+Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies. The optional definition bonus uses the free [Free Dictionary API](https://dictionaryapi.dev/).
 
 ## How to play
 
@@ -32,6 +32,8 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step, no dependencies.
 
 When time is up the camera pans out to show your whole path, followed by your stats: highest scoring word, average score, words used, fastest word and average word time.
 
+**Definition bonus** (Normal and Hardcore): from the 5th word on, there is a 50% chance that a box appears at the bottom with the definition of a random valid word that fits the current tiles. Type exactly that word for **+200 points**. The box glows and shoots confetti when you get it. If you play a different word instead, the box shows the correct one for 1.5 seconds. The definition never contains the word itself (or a close variant), and nothing is shown if the dictionary can't be reached or has no usable definition. Typing a hinted word still gives nothing. Definitions come from [dictionaryapi.dev](https://dictionaryapi.dev/) (needs an internet connection; the game works fine without it).
+
 ### Modes
 
 Pick a mode on the start screen. Each mode keeps its own best (Marathon keeps your fastest time).
@@ -44,7 +46,7 @@ Pick a mode on the start screen. Each mode keeps its own best (Marathon keeps yo
 
 Tap the gear (main menu, or top right during a game; **Esc** also opens it). Opening it mid-game pauses the game. Settings are saved in your browser.
 
-- **Visual Effects**: score celebrations, screen pulses, particles and the word shine. Turn off for a plainer look.
+- **Visual Effects**: score celebrations, screen pulses, particles, the word shine and the definition glow and confetti. Turn off for a plainer look.
 - **Music** and **Sound effects**: volume sliders.
 - **Auto type forced letters**: the inherited letters (and bridge letters) are typed for you as soon as you reach them, and Backspace skips over them.
 

@@ -3,6 +3,9 @@
 const T = 56, G = 6, STEP = T + G;
 const START_TIME = 20, MAX_TIME = 40;
 const MARATHON_WORDS = 30, HARDCORE_PENALTY = 3;
+// Definition bonus (normal + hardcore): from the 5th word on, a chance that a random valid word's definition is shown.
+const DEF_FROM = 4, DEF_CHANCE = 0.5, DEF_BONUS = 200, DEF_TRIES = 5, DEF_SHOW_MS = 2200, DEF_MISS_MS = 1500; // DEF_FROM = words already completed
+const DICT_API = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 const BEST_KEY = { normal: "wordwalker-best", marathon: "wordwalker-best-marathon", hardcore: "wordwalker-best-hardcore" };
 // Scrabble letter values
 const LV = {
@@ -30,6 +33,7 @@ const world = $("world"), overlay = $("overlay"), toastEl = $("toast"), kb = $("
 const scoreEl = $("score"), wordsEl = $("words"), clockEl = $("clock");
 const barEl = $("clockbar"), clockText = $("clocktext");
 const hintBtn = $("hint"), hintNum = $("hintnum");
+const defEl = $("defbox"), defTag = $("deftag"), defPts = $("defpts"), defText = $("deftext"), defMeta = $("defmeta");
 
 // ---------- settings ----------
 const DEFAULTS = { fx: true, music: 50, sfx: 100, auto: false, theme: "auto" };
@@ -83,6 +87,7 @@ async function loadWords() {
 // ---------- state ----------
 let tiles, used, seg, score, count, time, running = false, last = 0, mStart = 0, finalMs = 0;
 let paused = false, pauseAt = 0, autoBusy = false;
+let defInset = 0, defWin = 0, defQueued = null; // space the definition box takes at the bottom, win-state timer, definition waiting for it
 let started = false, hints = 2, log = [], hintTimers = [], endTimers = []; // started = clock running (after the 3rd word)
 // bests[normal/hardcore] = score, bests.marathon = fastest time in ms
 const bests = {};
@@ -158,10 +163,11 @@ function newSegment(prev) {
       cells.push(c);
     } else cells.push(makeCell(x, y, randMult()));
   }
-  clearHint();
-  seg = { dir, L, a, fx, cells, buf: [], t0: performance.now(), hinted: false, hintWord: null };
+  clearHint(); hideDef();
+  seg = { dir, L, a, fx, cells, buf: [], t0: performance.now(), hinted: false, hintWord: null, defWord: null };
   updateTutorial();
   render();
+  if (mode !== "marathon" && count >= DEF_FROM && Math.random() < DEF_CHANCE) setupDefinition(seg);
 }
 
 world.style.transformOrigin = "0 0";
@@ -173,8 +179,8 @@ function fit(minX, maxX, minY, maxY, minZoom) {
   const w = (maxX - minX) * STEP + T, h = (maxY - minY) * STEP + T;
   const mx = minX * STEP + w / 2, my = minY * STEP + h / 2;
   const vv = visible();
-  const s = Math.max(minZoom, Math.min(1, (vv.width - 32) / w, (vv.height - 100) / h));
-  const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30;
+  const s = Math.max(minZoom, Math.min(1, (vv.width - 32) / w, (vv.height - 100 - defInset) / h));
+  const cx = vv.offsetLeft + vv.width / 2, cy = vv.offsetTop + vv.height / 2 + 30 - defInset / 2;
   world.style.transform = `translate(${cx - mx * s}px,${cy - my * s}px) scale(${s})`;
 }
 
@@ -246,18 +252,21 @@ function submit() {
   if (used.has(word)) return reject("Already used!");
   if (!WORDS.has(word)) return reject("Not a word");
   const hinted = word === seg.hintWord; // typing the exact hinted word: no points, no bonuses
+  const defHit = !hinted && seg.defWord === word; // the word whose definition is on screen
+  const defMiss = !!seg.defWord && !defHit; // a definition was shown but the player went another way
   let pts = 0;
   seg.cells.forEach((c, i) => { if (!seg.fx.has(i)) pts += LV[c.letter] * c.mult * 10; c.el.classList.add("done"); c.el.classList.remove("pop"); });
   if (hinted) pts = 0;
+  const bonus = defHit ? DEF_BONUS : 0; pts += bonus;
   used.add(word); count++; score += pts;
   if (started && !hinted && mode !== "marathon") time = Math.min(MAX_TIME, time + 3 + seg.L * 1.5); // the 3 intro words are free
   log.push({
-    word, pts, ms: performance.now() - seg.t0, hinted,
+    word, pts, bonus, ms: performance.now() - seg.t0, hinted,
     cells: seg.cells.slice(),
     inh: seg.cells.map((_, i) => seg.fx.has(i)), // inherited letters score nothing
     mults: seg.cells.map((c, i) => (seg.fx.has(i) ? 1 : c.mult)),
   });
-  let msg = hinted ? "Hinted word - no points" : "+" + pts;
+  let msg = hinted ? "Hinted word - no points" : bonus ? `+${pts - bonus} +${bonus} definition bonus!` : "+" + pts;
   if (mode === "normal" && !hinted && count % 10 === 0) { hints++; msg += " - +1 hint"; } // marathon/hardcore never earn hints
   updateHint();
   if (count === 3) { started = true; last = performance.now(); document.body.classList.remove("intro"); } // reveal HUD, start clock
@@ -269,7 +278,8 @@ function submit() {
   const finished = seg, finish = mode === "marathon" && count >= MARATHON_WORDS;
   if (finish) finalMs = performance.now() - mStart; else newSegment(seg);
   if (settings.fx) finished.cells.forEach((c, i) => { c.el.style.setProperty("--d", i * 70 + "ms"); flash(c.el, "shine"); });
-  if (!hinted) celebrate(pts, finished.cells);
+  if (!hinted) celebrate(pts - bonus, finished.cells); // the bonus doesn't inflate the tier
+  if (!finish && (defHit || defMiss)) revealDef(defHit ? word : finished.defWord, defHit);
   if (finish) end();
 }
 
@@ -326,7 +336,10 @@ if (window.visualViewport) {
 function updateHint() { hintNum.textContent = hints; hintBtn.disabled = hints < 1; }
 function clearHint() { hintTimers.forEach(clearTimeout); hintTimers = []; }
 // Keeps the button above the on-screen keyboard.
-function layoutHint() { const vv = visible(); hintBtn.style.bottom = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px"; }
+function layoutHint() {
+  const vv = visible(), b = Math.max(0, innerHeight - vv.height - vv.offsetTop) + 16 + "px";
+  hintBtn.style.bottom = b; defEl.style.bottom = b; layoutDef();
+}
 
 function useHint() {
   if (!running || paused || mode === "hardcore" || count < 3 || hints < 1 || seg.hinted || seg.buf.length >= seg.L) return;
@@ -346,6 +359,98 @@ function useHint() {
   play("hint");
 }
 hintBtn.onclick = () => { useHint(); focusKb(); };
+
+// ---------- definition bonus ----------
+// Sometimes a definition of a random valid word (fitting the current tiles) appears at the bottom.
+// Type exactly that word for +100. Nothing is shown if the API fails or has no usable definition.
+const defCache = new Map(); // word -> { word, text, pos } | null
+
+// Skip definitions that just point at another form of a word, or that aren't suitable for a casual game.
+const DEF_SKIP = /^\W*(?:\(.*?\)\s*)?(?:alternative|obsolete|archaic|dated|nonstandard|misspelling|plural|singular|simple past|past tense|past participle|present participle|third-person|comparative|superlative|inflection|abbreviation|initialism|acronym|synonym|eye dialect|clipping|short for|contraction)\b|\b(?:form|spelling|participle|tense|plural|variant|misspelling|abbreviation) of\b|\b(?:sexual|vulgar|offensive|slur|derogatory)\b/i;
+
+// True if the definition gives the word away: contains it, or a close variant (love / loved / loving / lovely).
+function leaks(text, word) {
+  const low = text.toLowerCase();
+  if (word.length >= 4 && low.includes(word)) return true;
+  for (const t of low.match(/[a-z]+/g) || []) {
+    if (Math.abs(t.length - word.length) > 4) continue;
+    let p = 0; while (p < t.length && p < word.length && t[p] === word[p]) p++;
+    if (p >= 3 && p >= Math.min(t.length, word.length) - 1) return true;
+  }
+  return false;
+}
+
+function pickDefinition(word, data) {
+  if (!Array.isArray(data)) return null; // errors come back as { title: "No Definitions Found", ... }
+  const opts = [];
+  for (const e of data) for (const m of (e && e.meanings) || []) for (const d of (m && m.definitions) || []) {
+    const text = String((d && d.definition) || "").replace(/\s+/g, " ").trim();
+    if (text.length < 12 || text.length > 220 || DEF_SKIP.test(text) || leaks(text, word)) continue;
+    opts.push({ word, text, pos: m.partOfSpeech || "" }); // examples are never shown: they usually contain the word
+  }
+  return opts.length ? pickOf(opts) : null;
+}
+
+async function getDefinition(word) {
+  if (defCache.has(word)) return defCache.get(word);
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 4000);
+  try {
+    const res = await fetch(DICT_API + encodeURIComponent(word), { signal: ctl.signal });
+    const info = res.ok ? pickDefinition(word, await res.json()) : null;
+    defCache.set(word, info);
+    return info;
+  } catch (e) { return null; } // offline / timeout / bad JSON: just no definition (not cached, may work later)
+  finally { clearTimeout(timer); }
+}
+
+async function setupDefinition(s) {
+  const pre = s.buf.join(""), fixed = [...s.fx].map((i) => [i, s.cells[i].prov]), pool = [];
+  for (const w of byLen(s.L)) if (!used.has(w) && w.startsWith(pre) && fixed.every(([i, ch]) => w[i] === ch)) pool.push(w);
+  for (let n = 0; n < DEF_TRIES && pool.length; n++) {
+    const w = pool.splice(rnd(0, pool.length - 1), 1)[0];
+    const info = await getDefinition(w);
+    if (!running || seg !== s) return; // the player moved on
+    if (info) return showDef(s, info);
+  }
+}
+
+function layoutDef() {
+  defInset = defEl.classList.contains("show") ? defEl.offsetHeight + 28 : 0; // keeps the tiles and the toast clear of the box
+  document.documentElement.style.setProperty("--definset", defInset + "px");
+}
+
+function showDef(s, info) {
+  if (!running || s !== seg) return;
+  if (defWin) { defQueued = { s, info }; return; } // wait until the success animation is done
+  s.defWord = info.word;
+  defEl.classList.remove("win", "miss");
+  defTag.textContent = "Bonus word"; defPts.textContent = "+" + DEF_BONUS;
+  defText.textContent = info.text;
+  defMeta.textContent = [info.pos, s.L + " letters"].filter(Boolean).join(" · ");
+  defEl.classList.add("show"); layoutDef(); render();
+}
+
+function hideDef(force) {
+  if (force) { clearTimeout(defWin); defWin = 0; defQueued = null; }
+  if (defWin) return;
+  defEl.classList.remove("show", "win", "miss"); layoutDef();
+}
+
+// Reveals the target word. Hit: glow + confetti out of the box. Miss (another word was typed): just show the answer for a moment.
+function revealDef(word, hit) {
+  clearTimeout(defWin);
+  defTag.textContent = hit ? "Correct!" : "The word was"; defPts.textContent = hit ? "+" + DEF_BONUS : "";
+  defMeta.textContent = word.toUpperCase();
+  defEl.classList.remove("win", "miss"); defEl.classList.add("show"); layoutDef(); render();
+  if (!hit) defEl.classList.add("miss");
+  else if (settings.fx) { flash(defEl, "win"); confetti(); } else defEl.classList.add("win");
+  defWin = setTimeout(() => {
+    defWin = 0;
+    const q = defQueued; defQueued = null;
+    if (q && running && q.s === seg) showDef(q.s, q.info);
+    else { hideDef(); if (running) render(); }
+  }, hit ? DEF_SHOW_MS : DEF_MISS_MS);
+}
 
 // ---------- end-of-game stats ----------
 // Word with its letters colored by the multiplier they got (inherited letters dimmed).
@@ -429,7 +534,7 @@ function inspect(el) {
     ws.forEach((w) => w.cells.forEach((c) => { c.el.classList.add("hl"); hlEls.push(c.el); }));
     tipEl.innerHTML = ws.map((w) =>
       `<div class="tw"><div>${wordHtml(w)}</div><div class="tmeta">`
-      + (w.hinted ? "Hinted · no points" : `<b>+${w.pts}</b> points`)
+      + (w.hinted ? "Hinted · no points" : `<b>+${w.pts}</b> points` + (w.bonus ? ` (incl. +${w.bonus} definition bonus)` : ""))
       + ` · <b>${(w.ms / 1000).toFixed(1)}s</b> to find</div></div>`).join("");
   }
   tipEl.classList.add("show");
@@ -577,6 +682,15 @@ function celebrate(pts, cells) {
   if (t.fx && !fxRaf) { fxLast = performance.now(); fxRaf = requestAnimationFrame(fxTick); }
 }
 
+// Confetti bursts out of the definition box. Particles with s:1 live in screen coordinates (not world).
+function confetti() {
+  const r = defEl.getBoundingClientRect(), cols = ["#ffd166", "#4cd97b", "#ff6ec7", "#6ec1ff", "#b36bff", "#ff7a59", "#ffffff"];
+  for (let i = 0; i < 90; i++)
+    parts.push({ kind: "confetti", s: 1, x: r.left + rr(0.05, 0.95) * r.width, y: r.top + rr(0, 14), vx: rr(-260, 260), vy: rr(-620, -220),
+      age: 0, life: rr(1.3, 2.2), size: rr(5, 10), rot: rr(0, 6.28), vr: rr(-10, 10), seed: rr(0, 6.28), color: pickOf(cols) });
+  if (!fxRaf) { fxLast = performance.now(); fxRaf = requestAnimationFrame(fxTick); }
+}
+
 function spawnShapes(pos) {
   for (let i = 0; i < 36; i++) {
     const p = pickOf(pos);
@@ -624,13 +738,14 @@ function fxTick(now) {
   for (const p of parts) {
     p.age += dt;
     const wob = p.kind === "shape" || p.kind === "bubble" ? Math.sin(p.age * 5 + p.seed) * 18 : 0;
+    if (p.kind === "confetti") { p.vy += 900 * dt; p.vx *= 1 - 1.4 * dt; } // gravity + air drag
     p.x += (p.vx + wob) * dt; p.y += p.vy * dt;
     if (p.kind === "bubble" && p.age >= p.popAt) { p.kind = "pop"; p.age = 0; p.life = 0.2; p.vx = p.vy = 0; }
   }
   parts = parts.filter((p) => p.age < p.life);
 
   for (const p of parts) {
-    const u = p.age / p.life, x = X(p.x), y = Y(p.y), r = p.size * k;
+    const u = p.age / p.life, x = p.s ? p.x : X(p.x), y = p.s ? p.y : Y(p.y), r = p.size * (p.s ? 1 : k);
     ctx.save();
     if (p.kind === "shape") {
       ctx.translate(x, y); ctx.rotate(p.rot + p.vr * p.age);
@@ -638,6 +753,11 @@ function fxTick(now) {
       ctx.beginPath();
       for (let i = 0; i < p.sides; i++) { const a = (i / p.sides) * 6.283; ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * r, Math.sin(a) * r); }
       ctx.closePath(); ctx.globalAlpha = (1 - u) * 0.8; ctx.fill(); ctx.globalAlpha = 1 - u; ctx.stroke();
+    } else if (p.kind === "confetti") {
+      ctx.translate(x, y); ctx.rotate(p.rot + p.vr * p.age);
+      ctx.scale(1, Math.cos(p.age * 9 + p.seed)); // flutter
+      ctx.globalAlpha = Math.min(1, (1 - u) * 2.5); ctx.fillStyle = p.color;
+      ctx.fillRect(-r / 2, -r / 4, r, r / 2);
     } else if (p.kind === "bubble") {
       ctx.fillStyle = "rgba(255,110,199,.18)"; ctx.strokeStyle = "#ff9ad5"; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill(); ctx.stroke();
@@ -729,7 +849,7 @@ function start() {
   paused = false; resetReview();
   world.innerHTML = ""; tiles = new Map(); used = new Set();
   score = 0; count = 0; time = START_TIME; running = true; started = false; hints = 2; log = []; mStart = 0; finalMs = 0;
-  endTimers.forEach(clearTimeout); endTimers = []; fxClear();
+  endTimers.forEach(clearTimeout); endTimers = []; fxClear(); hideDef(true);
   world.style.transitionDuration = ""; world.style.transitionTimingFunction = "";
   document.body.classList.add("intro"); tutEl.classList.remove("show");
   overlay.classList.remove("end"); hintBtn.hidden = mode === "hardcore"; updateHint(); layoutHint();
@@ -746,7 +866,7 @@ function start() {
 function end() {
   running = false;
   const marathon = mode === "marathon";
-  clearHint(); hintBtn.hidden = true; tutEl.classList.remove("show");
+  clearHint(); hintBtn.hidden = true; tutEl.classList.remove("show"); hideDef(true);
   kb.blur(); kb.value = ""; // closes the mobile keyboard
   clockEl.classList.remove("low");
   if (marathon) { clockText.textContent = fmt(finalMs / 1000); barEl.style.width = "100%"; }
